@@ -1,0 +1,35 @@
+//! Double SHA256 transform - SHA256(SHA256(input)).
+
+use sha2::{Digest, Sha256};
+use super::{Input, Key, Transform};
+
+pub struct DoubleSha256Transform;
+
+impl Transform for DoubleSha256Transform {
+    fn name(&self) -> &'static str {
+        "double_sha256"
+    }
+
+    fn apply_batch(&self, inputs: &[Input], output: &mut Vec<(String, Key)>) {
+        for input in inputs {
+            // Double hash string representation
+            let hash1 = Sha256::digest(input.string_val.as_bytes());
+            let hash2 = Sha256::digest(&hash1);
+            output.push((input.string_val.clone(), hash2.into()));
+
+            // Double hash big-endian bytes
+            if let Some(be) = input.bytes_be {
+                let h1 = Sha256::digest(be);
+                let h2 = Sha256::digest(&h1);
+                output.push((input.string_val.clone(), h2.into()));
+            }
+
+            // Double hash little-endian bytes
+            if let Some(le) = input.bytes_le {
+                let h1 = Sha256::digest(le);
+                let h2 = Sha256::digest(&h1);
+                output.push((input.string_val.clone(), h2.into()));
+            }
+        }
+    }
+}

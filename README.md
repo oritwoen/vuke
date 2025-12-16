@@ -1,0 +1,190 @@
+# vuke
+
+Research tool for studying vulnerable Bitcoin key generation practices.
+
+## Features
+
+- **Modular architecture** - pluggable sources and transforms
+- **Multiple input sources**
+  - Numeric ranges (test weak seeds)
+  - Wordlists (brainwallet analysis)
+  - Timestamps (time-based PRNG exploitation)
+  - Stdin streaming (pipeline integration)
+- **Historical vulnerability transforms**
+  - Direct (raw bytes as key)
+  - SHA256 (classic brainwallet)
+  - Double SHA256 (Bitcoin-style hashing)
+  - MD5 (legacy weak hashing)
+  - Milksad (MT19937 PRNG - CVE-2023-39910)
+  - Armory (legacy HD derivation)
+- **Parallel processing** via Rayon
+- **Address matching** for scanning known targets
+- **Pure Rust** implementation
+
+## Why This Project?
+
+This tool is designed for **security research** - understanding how vulnerable keys were generated in the past helps improve modern wallet security.
+
+Historical vulnerabilities this tool can reproduce:
+
+| Vulnerability | Year | Impact |
+|--------------|------|--------|
+| Brainwallets | 2011-2015 | SHA256(passphrase) easily cracked |
+| Weak PRNGs | 2013-2023 | Predictable seeds (timestamps, PIDs) |
+| [Milksad](https://milksad.info/) | 2023 | libbitcoin `bx` used MT19937 with 32-bit seeds |
+| Armory HD | 2012-2016 | Pre-BIP32 deterministic derivation |
+
+## Installation
+
+### Cargo
+
+```bash
+cargo install vuke
+```
+
+### From source
+
+```bash
+git clone https://github.com/oritwoen/vuke
+cd vuke
+cargo build --release
+```
+
+## Usage
+
+### Generate single key from passphrase
+
+```bash
+vuke single "correct horse battery staple" --transform sha256
+```
+
+Output:
+```
+Passphrase: "correct horse battery staple"
+Transform: sha256
+Source: correct horse battery staple
+---
+Private Key (hex):     c4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a
+WIF (compressed):      L3p8oAcQTtuokSCRHQ7i4MhjWc9zornvpJLfmg62sYpLRJF9woSu
+---
+P2PKH (compressed):   1JwSSubhmg6iPtRjtyqhUYYH7bZg3Lfy1T
+P2WPKH:               bc1qfnpg7ceg02y64qrskgz0drwp3y6hma3q6wvnzr
+```
+
+### Scan wordlist for known addresses
+
+```bash
+vuke scan --transform=sha256 --targets known_addresses.txt wordlist --file passwords.txt
+```
+
+### Test numeric range (weak seeds)
+
+```bash
+vuke generate --transform=milksad range --start 1 --end 1000000
+```
+
+### Test timestamp-based keys
+
+```bash
+vuke scan --transform=sha256 --targets addresses.txt timestamps --start 2015-01-01 --end 2015-01-31
+```
+
+### Multiple transforms
+
+```bash
+vuke scan --transform=sha256 --transform=double_sha256 --transform=md5 --targets addresses.txt wordlist --file words.txt
+```
+
+### Pipe from stdin
+
+```bash
+cat passwords.txt | vuke generate --transform=sha256 stdin
+```
+
+### Benchmark transforms
+
+```bash
+vuke bench --transform milksad
+```
+
+## Supported Transforms
+
+| Transform | Description | Use Case |
+|-----------|-------------|----------|
+| `direct` | Raw bytes padded to 32 bytes | Testing raw numeric seeds |
+| `sha256` | SHA256(input) | Classic brainwallets |
+| `double_sha256` | SHA256(SHA256(input)) | Bitcoin-style hashing |
+| `md5` | MD5(input) duplicated to 32 bytes | Legacy weak hashing |
+| `milksad` | MT19937 PRNG with 32-bit seed | CVE-2023-39910 (libbitcoin) |
+| `armory` | Armory HD derivation chain | Pre-BIP32 wallets |
+
+## Library Usage
+
+```rust
+use vuke::derive::KeyDeriver;
+use vuke::transform::{Input, Transform, Sha256Transform};
+
+fn main() {
+    let deriver = KeyDeriver::new();
+    let transform = Sha256Transform;
+
+    let input = Input::from_string("test passphrase".to_string());
+    let mut buffer = Vec::new();
+    transform.apply_batch(&[input], &mut buffer);
+
+    for (source, key) in buffer {
+        let derived = deriver.derive(&key);
+        println!("Source: {}", source);
+        println!("WIF: {}", derived.wif_compressed);
+        println!("Address: {}", derived.p2pkh_compressed);
+    }
+}
+```
+
+## Architecture
+
+```
+src/
+├── main.rs          # CLI entry point
+├── lib.rs           # Library exports
+├── derive.rs        # Private key → address derivation
+├── matcher.rs       # Address matching against targets
+├── network.rs       # Bitcoin network handling
+├── benchmark.rs     # Performance testing
+├── source/
+│   ├── mod.rs       # Source trait and types
+│   ├── range.rs     # Numeric range source
+│   ├── wordlist.rs  # File-based wordlist
+│   ├── timestamps.rs # Date range → Unix timestamps
+│   └── stdin.rs     # Streaming from stdin
+├── transform/
+│   ├── mod.rs       # Transform trait and types
+│   ├── input.rs     # Input value representation
+│   ├── direct.rs    # Raw bytes transform
+│   ├── sha256.rs    # SHA256 hashing
+│   ├── double_sha256.rs # Double SHA256
+│   ├── md5.rs       # MD5 hashing
+│   ├── milksad.rs   # MT19937 PRNG (CVE-2023-39910)
+│   └── armory.rs    # Armory HD derivation
+└── output/
+    ├── mod.rs       # Output trait
+    └── console.rs   # Console output handler
+```
+
+## Requirements
+
+- Rust 1.70+
+
+## Disclaimer
+
+This tool is for **educational and security research purposes only**. Do not use it to access wallets you do not own. The authors are not responsible for any misuse.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## References
+
+- [Milksad vulnerability](https://milksad.info/) - CVE-2023-39910
+- [Brainwallet attacks](https://eprint.iacr.org/2016/103.pdf) - Academic paper
+- [Armory documentation](https://btcarmory.com/) - Legacy HD wallet
