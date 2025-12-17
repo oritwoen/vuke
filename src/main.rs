@@ -40,6 +40,10 @@ enum Command {
         /// Verbose output (show all key formats)
         #[arg(short, long)]
         verbose: bool,
+
+        /// Output file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 
     /// Scan for specific addresses
@@ -58,6 +62,10 @@ enum Command {
         /// Network (bitcoin, testnet, signet, regtest)
         #[arg(long, default_value = "bitcoin")]
         network: String,
+
+        /// Output file (default: stdout)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 
     /// Generate single key from passphrase
@@ -131,16 +139,18 @@ fn main() -> Result<()> {
             transform,
             network,
             verbose,
+            output,
         } => {
             let _network = parse_network(&network);
 
-            let output: Box<dyn Output> = if verbose {
-                Box::new(ConsoleOutput::verbose())
-            } else {
-                Box::new(ConsoleOutput::new())
+            let out: Box<dyn Output> = match (output, verbose) {
+                (Some(path), true) => Box::new(ConsoleOutput::to_file_verbose(&path)?),
+                (Some(path), false) => Box::new(ConsoleOutput::to_file(&path)?),
+                (None, true) => Box::new(ConsoleOutput::verbose()),
+                (None, false) => Box::new(ConsoleOutput::new()),
             };
 
-            run_generate(source, transform, output.as_ref())
+            run_generate(source, transform, out.as_ref())
         }
 
         Command::Scan {
@@ -148,9 +158,13 @@ fn main() -> Result<()> {
             transform,
             targets,
             network: _,
+            output,
         } => {
-            let output: Box<dyn Output> = Box::new(ConsoleOutput::new());
-            run_scan(source, transform, targets, output.as_ref())
+            let out: Box<dyn Output> = match output {
+                Some(path) => Box::new(ConsoleOutput::to_file(&path)?),
+                None => Box::new(ConsoleOutput::new()),
+            };
+            run_scan(source, transform, targets, out.as_ref())
         }
 
         Command::Single {

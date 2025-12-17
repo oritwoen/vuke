@@ -1,7 +1,9 @@
 //! Console output handler.
 
 use anyhow::Result;
-use std::io::{self, Write};
+use std::fs::File;
+use std::io::{self, BufWriter, Write};
+use std::path::Path;
 use std::sync::Mutex;
 
 use super::Output;
@@ -29,6 +31,24 @@ impl ConsoleOutput {
             writer: Mutex::new(Box::new(io::stdout())),
             verbose: true,
         }
+    }
+
+    /// Create output to file.
+    pub fn to_file(path: &Path) -> Result<Self> {
+        let file = File::create(path)?;
+        Ok(Self {
+            writer: Mutex::new(Box::new(BufWriter::new(file))),
+            verbose: false,
+        })
+    }
+
+    /// Create verbose output to file.
+    pub fn to_file_verbose(path: &Path) -> Result<Self> {
+        let file = File::create(path)?;
+        Ok(Self {
+            writer: Mutex::new(Box::new(BufWriter::new(file))),
+            verbose: true,
+        })
     }
 }
 
@@ -88,5 +108,56 @@ impl Output for ConsoleOutput {
         let mut w = self.writer.lock().unwrap();
         w.flush()?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    fn make_test_key() -> DerivedKey {
+        DerivedKey {
+            private_key_hex: "abc123".to_string(),
+            private_key_decimal: "123".to_string(),
+            private_key_binary: "101".to_string(),
+            bit_length: 8,
+            hamming_weight: 3,
+            leading_zeros: 0,
+            pubkey_compressed: "02abc".to_string(),
+            pubkey_uncompressed: "04abc".to_string(),
+            wif_compressed: "WIF_C".to_string(),
+            wif_uncompressed: "WIF_U".to_string(),
+            p2pkh_compressed: "1Address".to_string(),
+            p2pkh_uncompressed: "1Uncompressed".to_string(),
+            p2wpkh: "bc1q...".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_to_file_writes_compact_format() {
+        let temp = NamedTempFile::new().unwrap();
+        let output = ConsoleOutput::to_file(temp.path()).unwrap();
+
+        output.key("test_source", "sha256", &make_test_key()).unwrap();
+        output.flush().unwrap();
+
+        let content = std::fs::read_to_string(temp.path()).unwrap();
+        assert!(content.contains("test_source,sha256,abc123,1Address"));
+    }
+
+    #[test]
+    fn test_to_file_verbose_writes_yaml_format() {
+        let temp = NamedTempFile::new().unwrap();
+        let output = ConsoleOutput::to_file_verbose(temp.path()).unwrap();
+
+        output.key("test_source", "sha256", &make_test_key()).unwrap();
+        output.flush().unwrap();
+
+        let content = std::fs::read_to_string(temp.path()).unwrap();
+        assert!(content.contains("source: test_source"));
+        assert!(content.contains("transform: sha256"));
+        assert!(content.contains("private_key: abc123"));
+        assert!(content.contains("p2pkh_compressed: 1Address"));
     }
 }
