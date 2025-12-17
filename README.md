@@ -19,6 +19,7 @@ Research tool for studying vulnerable Bitcoin key generation practices.
   - Armory (legacy HD derivation)
 - **Parallel processing** via Rayon
 - **Address matching** for scanning known targets
+- **File output** for saving results
 - **Pure Rust** implementation
 
 ## Why This Project?
@@ -99,6 +100,14 @@ vuke scan --transform=sha256 --transform=double_sha256 --transform=md5 --targets
 
 ```bash
 cat passwords.txt | vuke generate --transform=sha256 stdin
+```
+
+### Save results to file
+
+```bash
+vuke generate --output results.csv range --start 1 --end 1000000
+vuke generate --output results.txt --verbose range --start 1 --end 1000
+vuke scan --output hits.txt --targets addresses.txt wordlist --file passwords.txt
 ```
 
 ### Benchmark transforms
