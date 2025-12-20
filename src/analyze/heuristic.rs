@@ -18,7 +18,8 @@ impl Analyzer for HeuristicAnalyzer {
             observations.push(format!("low entropy ({:.2})", entropy));
         }
 
-        if hamming < 100 || hamming > 156 {
+        // 256 bits × 0.5 expected = 128 mean, σ ≈ 8, so 3σ range is 104-152
+        if hamming < 104 || hamming > 152 {
             observations.push(format!("unusual hamming weight ({})", hamming));
         }
 

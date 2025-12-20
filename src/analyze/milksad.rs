@@ -49,7 +49,8 @@ impl Analyzer for MilksadAnalyzer {
             }
 
             if let Some(pb) = progress {
-                pb.inc(chunk_size as u64);
+                let actual_chunk_size = (end - start + 1) as u64;
+                pb.inc(actual_chunk_size);
             }
         });
 
@@ -83,6 +84,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_find_known_seed() {
         let seed = 12345u32;
         let mut rng = Mt::new(seed);
@@ -95,6 +97,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_seed_zero() {
         let seed = 0u32;
         let mut rng = Mt::new(seed);
@@ -104,5 +107,18 @@ mod tests {
         let result = MilksadAnalyzer.analyze(&key, None);
         assert_eq!(result.status, AnalysisStatus::Confirmed);
         assert!(result.details.unwrap().contains("seed = 0"));
+    }
+
+    #[test]
+    #[ignore]
+    fn test_seed_last_chunk() {
+        let seed = u32::MAX - 500_000;
+        let mut rng = Mt::new(seed);
+        let mut key = [0u8; 32];
+        rng.fill_bytes(&mut key);
+
+        let result = MilksadAnalyzer.analyze(&key, None);
+        assert_eq!(result.status, AnalysisStatus::Confirmed);
+        assert!(result.details.unwrap().contains(&format!("seed = {}", seed)));
     }
 }

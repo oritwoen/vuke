@@ -65,7 +65,9 @@ fn try_parse_hex(input: &str) -> Option<[u8; 32]> {
 fn try_parse_wif(input: &str) -> Option<[u8; 32]> {
     let first_char = input.chars().next()?;
 
-    if !matches!(first_char, '5' | 'K' | 'L') {
+    // Mainnet: 5 (uncompressed), K/L (compressed)
+    // Testnet: 9 (uncompressed), c (compressed)
+    if !matches!(first_char, '5' | 'K' | 'L' | '9' | 'c') {
         return None;
     }
 

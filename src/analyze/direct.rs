@@ -59,6 +59,7 @@ impl Analyzer for DirectAnalyzer {
 
 fn is_ascii_string(key: &[u8; 32]) -> bool {
     let non_null: Vec<_> = key.iter().take_while(|&&b| b != 0).collect();
+    // Max 31 bytes to ensure at least one null terminator remains for detection
     if non_null.is_empty() || non_null.len() > 31 {
         return false;
     }
