@@ -1,14 +1,17 @@
-## [unreleased]
+## [0.2.0] - 2025-12-20
 
 ### 🚀 Features
 
 - *(vuke)* Add --output flag for file output (#2)
+- *(vuke)* Add git-cliff for changelog generation (#4)
+- *(analyze)* Add reverse key origin detection (#8)
 
 ### ⚙️ Miscellaneous Tasks
 
 - *(pkg)* Add Arch Linux PKGBUILD
 - *(aur)* Add AUR publish workflow
-
+- *(vuke)* Add crates.io publish workflow (#6)
+- Add justfile
 ## [0.1.0] - 2025-12-16
 
 ### 🚀 Features
