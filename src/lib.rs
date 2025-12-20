@@ -3,6 +3,7 @@
 //! This tool helps security researchers study historical vulnerabilities in Bitcoin
 //! key generation, including weak PRNGs, predictable seeds, and insecure derivation methods.
 
+pub mod analyze;
 pub mod source;
 pub mod transform;
 pub mod derive;

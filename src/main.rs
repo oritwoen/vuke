@@ -6,6 +6,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+use vuke::analyze::{Analyzer, AnalyzerType, KeyMetadata, format_results, format_results_json, parse_private_key};
 use vuke::derive::KeyDeriver;
 use vuke::matcher::Matcher;
 use vuke::network::parse_network;
@@ -92,6 +93,24 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Analyze a private key for potential vulnerable origins
+    Analyze {
+        /// Private key (hex, WIF, or decimal)
+        key: String,
+
+        /// Skip brute-force checks (faster, heuristics only)
+        #[arg(long)]
+        fast: bool,
+
+        /// Specific analyzer(s) to run
+        #[arg(long, value_enum)]
+        analyzer: Option<Vec<AnalyzerType>>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -174,6 +193,8 @@ fn main() -> Result<()> {
         } => run_single(&passphrase, transform, &network),
 
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
+
+        Command::Analyze { key, fast, analyzer, json } => run_analyze(&key, fast, analyzer, json),
     }
 }
 
@@ -290,4 +311,50 @@ fn create_transform(t: TransformType) -> Box<dyn Transform> {
         TransformType::Milksad => Box::new(MilksadTransform),
         TransformType::Armory => Box::new(ArmoryTransform::new()),
     }
+}
+
+fn run_analyze(
+    key_input: &str,
+    fast: bool,
+    analyzer_types: Option<Vec<AnalyzerType>>,
+    json_output: bool,
+) -> Result<()> {
+    use indicatif::ProgressBar;
+
+    let key = parse_private_key(key_input)?;
+    let metadata = KeyMetadata::from_key(&key);
+
+    let analyzer_types = match analyzer_types {
+        Some(types) => types,
+        None if fast => AnalyzerType::fast(),
+        None => AnalyzerType::all(),
+    };
+
+    let analyzers: Vec<Box<dyn Analyzer>> = analyzer_types
+        .into_iter()
+        .map(|t| t.create())
+        .collect();
+
+    let mut results = Vec::new();
+
+    for analyzer in &analyzers {
+        let progress = if analyzer.is_brute_force() && !json_output {
+            let pb = ProgressBar::new(0);
+            pb.set_style(vuke::default_progress_style());
+            Some(pb)
+        } else {
+            None
+        };
+
+        let result = analyzer.analyze(&key, progress.as_ref());
+        results.push(result);
+    }
+
+    if json_output {
+        println!("{}", format_results_json(&metadata, &results));
+    } else {
+        print!("{}", format_results(&metadata, &results));
+    }
+
+    Ok(())
 }
