@@ -22,6 +22,7 @@ impl Analyzer for MilksadAnalyzer {
         }
 
         let chunk_size = 1_000_000u32;
+        let progress_interval = 100_000u32;
         let chunks: Vec<u32> = (0..=(u32::MAX / chunk_size)).collect();
 
         chunks.par_iter().for_each(|&chunk_idx| {
@@ -31,9 +32,13 @@ impl Analyzer for MilksadAnalyzer {
 
             let start = chunk_idx.saturating_mul(chunk_size);
             let end = start.saturating_add(chunk_size - 1).min(u32::MAX);
+            let mut last_progress = start;
 
             for seed in start..=end {
                 if found.load(Ordering::Acquire) {
+                    if let Some(pb) = progress {
+                        pb.inc((seed - last_progress) as u64);
+                    }
                     return;
                 }
 
@@ -44,13 +49,22 @@ impl Analyzer for MilksadAnalyzer {
                 if candidate == *key {
                     found_seed.store(seed, Ordering::Release);
                     found.store(true, Ordering::Release);
+                    if let Some(pb) = progress {
+                        pb.inc((seed - last_progress) as u64);
+                    }
                     return;
+                }
+
+                if let Some(pb) = progress {
+                    if seed - last_progress >= progress_interval {
+                        pb.inc((seed - last_progress) as u64);
+                        last_progress = seed;
+                    }
                 }
             }
 
             if let Some(pb) = progress {
-                let actual_chunk_size = (end - start + 1) as u64;
-                pb.inc(actual_chunk_size);
+                pb.inc((end - last_progress + 1) as u64);
             }
         });
 
