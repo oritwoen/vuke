@@ -17,6 +17,13 @@ pub use output::{format_results, format_results_json};
 
 use indicatif::ProgressBar;
 
+pub fn calculate_bit_length(key: &[u8; 32]) -> u16 {
+    match key.iter().position(|&b| b != 0) {
+        Some(idx) => 256 - (idx as u16) * 8 - key[idx].leading_zeros() as u16,
+        None => 0,
+    }
+}
+
 /// Result of analyzing a key with a specific analyzer.
 #[derive(Debug, Clone)]
 pub struct AnalysisResult {
@@ -127,17 +134,7 @@ pub struct KeyMetadata {
 impl KeyMetadata {
     pub fn from_key(key: &[u8; 32]) -> Self {
         let hex = hex::encode(key);
-
-        let leading_zero_bits: u16 = key
-            .iter()
-            .take_while(|&&b| b == 0)
-            .count() as u16 * 8
-            + key
-                .iter()
-                .find(|&&b| b != 0)
-                .map(|b| b.leading_zeros() as u16)
-                .unwrap_or(0);
-        let bit_length = 256 - leading_zero_bits;
+        let bit_length = calculate_bit_length(key);
 
         let hamming_weight: u16 = key.iter().map(|b| b.count_ones() as u16).sum();
 

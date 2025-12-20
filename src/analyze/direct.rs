@@ -1,5 +1,5 @@
 use indicatif::ProgressBar;
-use super::{Analyzer, AnalysisResult, AnalysisStatus};
+use super::{Analyzer, AnalysisResult, AnalysisStatus, calculate_bit_length};
 
 pub struct DirectAnalyzer;
 
@@ -14,8 +14,7 @@ impl Analyzer for DirectAnalyzer {
         let leading_zeros = key.iter().take_while(|&&b| b == 0).count();
         let trailing_zeros = key.iter().rev().take_while(|&&b| b == 0).count();
 
-        let bit_length = 256 - (leading_zeros * 8) as u16
-            - key.get(leading_zeros).map(|b| b.leading_zeros() as u16).unwrap_or(0);
+        let bit_length = calculate_bit_length(key);
 
         if bit_length <= 64 {
             observations.push(format!("bit_length={}, fits in u64", bit_length));

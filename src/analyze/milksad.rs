@@ -25,7 +25,7 @@ impl Analyzer for MilksadAnalyzer {
         let chunks: Vec<u32> = (0..=(u32::MAX / chunk_size)).collect();
 
         chunks.par_iter().for_each(|&chunk_idx| {
-            if found.load(Ordering::Relaxed) {
+            if found.load(Ordering::Acquire) {
                 return;
             }
 
@@ -33,7 +33,7 @@ impl Analyzer for MilksadAnalyzer {
             let end = start.saturating_add(chunk_size - 1).min(u32::MAX);
 
             for seed in start..=end {
-                if found.load(Ordering::Relaxed) {
+                if found.load(Ordering::Acquire) {
                     return;
                 }
 
@@ -42,8 +42,8 @@ impl Analyzer for MilksadAnalyzer {
                 rng.fill_bytes(&mut candidate);
 
                 if candidate == *key {
-                    found_seed.store(seed, Ordering::Relaxed);
-                    found.store(true, Ordering::Relaxed);
+                    found_seed.store(seed, Ordering::Release);
+                    found.store(true, Ordering::Release);
                     return;
                 }
             }
@@ -58,8 +58,8 @@ impl Analyzer for MilksadAnalyzer {
             pb.finish_and_clear();
         }
 
-        if found.load(Ordering::Relaxed) {
-            let seed = found_seed.load(Ordering::Relaxed);
+        if found.load(Ordering::Acquire) {
+            let seed = found_seed.load(Ordering::Acquire);
             AnalysisResult {
                 analyzer: self.name(),
                 status: AnalysisStatus::Confirmed,

@@ -94,7 +94,27 @@ fn try_parse_decimal(input: &str) -> Option<[u8; 32]> {
     let mut key = [0u8; 32];
     let start = 32 - bytes.len();
     key[start..].copy_from_slice(&bytes);
+
+    if !is_valid_secp256k1_scalar(&key) {
+        return None;
+    }
+
     Some(key)
+}
+
+fn is_valid_secp256k1_scalar(key: &[u8; 32]) -> bool {
+    const SECP256K1_ORDER: [u8; 32] = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+        0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B,
+        0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41,
+    ];
+
+    if key.iter().all(|&b| b == 0) {
+        return false;
+    }
+
+    key < &SECP256K1_ORDER
 }
 
 #[cfg(test)]
@@ -140,9 +160,15 @@ mod tests {
 
     #[test]
     fn test_parse_decimal_large() {
-        let decimal = "115792089237316195423570985008687907852837564279074904382605163141518161494337";
+        let decimal = "115792089237316195423570985008687907852837564279074904382605163141518161494336";
         let key = parse_private_key(decimal).unwrap();
         assert_ne!(key, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_parse_decimal_out_of_range() {
+        let decimal = "115792089237316195423570985008687907852837564279074904382605163141518161494337";
+        assert!(parse_private_key(decimal).is_err());
     }
 
     #[test]
