@@ -1,3 +1,8 @@
+## [0.4.0] - 2025-12-21
+
+### 🚀 Features
+
+- *(analyze)* Add cascading filter (#17)
 ## [0.3.0] - 2025-12-21
 
 ### 🚀 Features
@@ -7,6 +12,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - *(release)* V0.2.0
+- *(release)* V0.3.0
 ## [0.2.0] - 2025-12-20
 
 ### 🚀 Features
