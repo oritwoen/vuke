@@ -35,6 +35,7 @@ Historical vulnerabilities this tool can reproduce:
 | Weak PRNGs | 2013-2023 | Predictable seeds (timestamps, PIDs) |
 | [Milksad](https://milksad.info/) | 2023 | libbitcoin `bx` used MT19937 with 32-bit seeds |
 | Armory HD | 2012-2016 | Pre-BIP32 deterministic derivation |
+| LCG PRNGs | 1990s-2010s | glibc rand(), MINSTD, MSVC - only 31-32 bit state |
 
 ## Installation
 
@@ -83,6 +84,19 @@ vuke scan --transform=sha256 --targets known_addresses.txt wordlist --file passw
 
 ```bash
 vuke generate --transform=milksad range --start 1 --end 1000000
+```
+
+### Test LCG-based keys
+
+```bash
+# Generate keys using glibc rand() (default little-endian)
+vuke generate --transform=lcg:glibc range --start 1 --end 1000000
+
+# Use MINSTD variant with big-endian byte order
+vuke generate --transform=lcg:minstd:be range --start 1 --end 1000
+
+# Test all LCG variants at once
+vuke generate --transform=lcg range --start 1 --end 100
 ```
 
 ### Test timestamp-based keys
@@ -155,6 +169,21 @@ Specific analyzer:
 vuke analyze --analyzer milksad c4bbcb1f...
 ```
 
+### LCG analyzer
+
+Check if a key was generated using a Linear Congruential Generator:
+
+```bash
+# Check all LCG variants
+vuke analyze --analyzer lcg <KEY>
+
+# Check specific variant and endianness
+vuke analyze --analyzer lcg:glibc:le <KEY>
+
+# With masking for puzzle analysis
+vuke analyze --analyzer lcg:glibc --mask 5 0x15
+```
+
 ### Masked key analysis (BTC1000-style puzzles)
 
 Some Bitcoin puzzles use a masking scheme where:
@@ -225,6 +254,7 @@ Probability analysis:
 | `md5` | MD5(input) duplicated to 32 bytes | Legacy weak hashing |
 | `milksad` | MT19937 PRNG with 32-bit seed | CVE-2023-39910 (libbitcoin) |
 | `armory` | Armory HD derivation chain | Pre-BIP32 wallets |
+| `lcg[:variant][:endian]` | LCG PRNG with 32-bit seed | Legacy C stdlib rand() |
 
 ## Supported Analyzers
 
@@ -235,6 +265,7 @@ Probability analysis:
 | `milksad --cascade` | Multi-target sequential verification | Reduce false positives in puzzle research |
 | `direct` | Pattern detection | Detect small seeds, ASCII strings |
 | `heuristic` | Statistical analysis | Entropy, hamming weight anomalies |
+| `lcg[:variant][:endian]` | Brute-force 2^31-2^32 seeds | Detect glibc/minstd/msvc/borland rand() |
 
 ## Library Usage
 
@@ -269,10 +300,12 @@ src/
 ├── matcher.rs       # Address matching against targets
 ├── network.rs       # Bitcoin network handling
 ├── benchmark.rs     # Performance testing
+├── lcg.rs           # LCG PRNG shared logic
 ├── analyze/
 │   ├── mod.rs       # Analyzer trait and types
 │   ├── key_parser.rs # Parse hex/WIF/decimal keys
 │   ├── milksad.rs   # MT19937 brute-force
+│   ├── lcg.rs       # LCG brute-force (glibc, minstd, msvc, borland)
 │   ├── direct.rs    # Pattern detection
 │   ├── heuristic.rs # Statistical analysis
 │   └── output.rs    # Plain text and JSON formatting
@@ -290,6 +323,7 @@ src/
 │   ├── double_sha256.rs # Double SHA256
 │   ├── md5.rs       # MD5 hashing
 │   ├── milksad.rs   # MT19937 PRNG (CVE-2023-39910)
+│   ├── lcg.rs       # LCG PRNG transform
 │   └── armory.rs    # Armory HD derivation
 └── output/
     ├── mod.rs       # Output trait
@@ -313,3 +347,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Milksad vulnerability](https://milksad.info/) - CVE-2023-39910
 - [Brainwallet attacks](https://eprint.iacr.org/2016/103.pdf) - Academic paper
 - [Armory documentation](https://btcarmory.com/) - Legacy HD wallet
+- [Linear Congruential Generator](https://en.wikipedia.org/wiki/Linear_congruential_generator) - Wikipedia

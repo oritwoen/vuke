@@ -5,10 +5,7 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use crate::transform::{
-    ArmoryTransform, DirectTransform, DoubleSha256Transform, Input, Md5Transform,
-    MilksadTransform, Sha256Transform, Transform, TransformType,
-};
+use crate::transform::{Input, TransformType};
 
 /// Run standardized benchmark for a transform.
 pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
@@ -17,7 +14,7 @@ pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
         println!("Time: 2s warmup + 5s measure (approx)");
     }
 
-    let transform = create_transform(transform_type);
+    let transform = transform_type.create();
 
     // Prepare test data
     let input = Input::from_u64(1234567890);
@@ -68,15 +65,4 @@ pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn create_transform(t: TransformType) -> Box<dyn Transform> {
-    match t {
-        TransformType::Direct => Box::new(DirectTransform),
-        TransformType::Sha256 => Box::new(Sha256Transform),
-        TransformType::DoubleSha256 => Box::new(DoubleSha256Transform),
-        TransformType::Md5 => Box::new(Md5Transform),
-        TransformType::Milksad => Box::new(MilksadTransform),
-        TransformType::Armory => Box::new(ArmoryTransform::new()),
-    }
 }

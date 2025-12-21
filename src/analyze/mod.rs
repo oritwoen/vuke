@@ -7,12 +7,14 @@ mod key_parser;
 mod milksad;
 mod direct;
 mod heuristic;
+mod lcg;
 mod output;
 
 pub use key_parser::{parse_private_key, parse_cascade, ParseError};
 pub use milksad::MilksadAnalyzer;
 pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
+pub use lcg::LcgAnalyzer;
 pub use output::{format_results, format_results_json};
 
 use indicatif::ProgressBar;
@@ -99,27 +101,44 @@ pub trait Analyzer: Send + Sync {
 }
 
 /// Available analyzer types for CLI selection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnalyzerType {
     Milksad,
     Direct,
     Heuristic,
+    Lcg {
+        variant: Option<String>,
+        endian: crate::lcg::LcgEndian,
+    },
 }
 
 impl AnalyzerType {
     /// Create analyzer instance
-    pub fn create(self) -> Box<dyn Analyzer> {
+    pub fn create(&self) -> Box<dyn Analyzer> {
         match self {
             AnalyzerType::Milksad => Box::new(MilksadAnalyzer),
             AnalyzerType::Direct => Box::new(DirectAnalyzer),
             AnalyzerType::Heuristic => Box::new(HeuristicAnalyzer),
+            AnalyzerType::Lcg { variant, endian } => {
+                let mut analyzer = match variant {
+                    Some(name) => {
+                        let v = crate::lcg::LcgVariant::from_str(name)
+                            .expect("Invalid LCG variant");
+                        LcgAnalyzer::with_variant(v)
+                    }
+                    None => LcgAnalyzer::new(),
+                };
+                analyzer = analyzer.with_endian(*endian);
+                Box::new(analyzer)
+            }
         }
     }
 
-    /// All available analyzer types
+    /// All available analyzer types (default configurations)
     pub fn all() -> Vec<AnalyzerType> {
         vec![
             AnalyzerType::Milksad,
+            AnalyzerType::Lcg { variant: None, endian: crate::lcg::LcgEndian::Big },
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
         ]
@@ -131,6 +150,68 @@ impl AnalyzerType {
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
         ]
+    }
+
+    /// Parse analyzer type from string.
+    /// 
+    /// Formats:
+    /// - "milksad", "direct", "heuristic" - simple analyzers
+    /// - "lcg" - all LCG variants, big-endian
+    /// - "lcg:glibc" - specific variant, big-endian
+    /// - "lcg:glibc:le" - specific variant, little-endian
+    /// - "lcg::le" - all variants, little-endian
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        let s = s.to_lowercase();
+        
+        if s == "milksad" {
+            return Ok(AnalyzerType::Milksad);
+        }
+        if s == "direct" {
+            return Ok(AnalyzerType::Direct);
+        }
+        if s == "heuristic" {
+            return Ok(AnalyzerType::Heuristic);
+        }
+        
+        if s == "lcg" || s.starts_with("lcg:") {
+            return Self::parse_lcg(&s);
+        }
+        
+        Err(format!("Unknown analyzer: {}. Valid: milksad, direct, heuristic, lcg[:variant][:endian]", s))
+    }
+
+    fn parse_lcg(s: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = s.split(':').collect();
+        
+        let (variant, endian) = match parts.as_slice() {
+            ["lcg"] => (None, crate::lcg::LcgEndian::Big),
+            ["lcg", ""] => (None, crate::lcg::LcgEndian::Big),
+            ["lcg", v] => {
+                if let Some(e) = crate::lcg::LcgEndian::from_str(v) {
+                    (None, e)
+                } else if crate::lcg::LcgVariant::from_str(v).is_some() {
+                    (Some(v.to_string()), crate::lcg::LcgEndian::Big)
+                } else {
+                    return Err(format!("Invalid LCG variant or endian: {}. Valid variants: glibc, minstd, msvc, borland. Valid endian: be, le", v));
+                }
+            }
+            ["lcg", "", e] => {
+                let endian = crate::lcg::LcgEndian::from_str(e)
+                    .ok_or_else(|| format!("Invalid endian: {}. Valid: be, le", e))?;
+                (None, endian)
+            }
+            ["lcg", v, e] => {
+                if crate::lcg::LcgVariant::from_str(v).is_none() {
+                    return Err(format!("Invalid LCG variant: {}. Valid: glibc, minstd, msvc, borland", v));
+                }
+                let endian = crate::lcg::LcgEndian::from_str(e)
+                    .ok_or_else(|| format!("Invalid endian: {}. Valid: be, le", e))?;
+                (Some(v.to_string()), endian)
+            }
+            _ => return Err("Invalid LCG format. Use: lcg, lcg:variant, lcg:variant:endian, lcg::endian".to_string()),
+        };
+        
+        Ok(AnalyzerType::Lcg { variant, endian })
     }
 }
 
