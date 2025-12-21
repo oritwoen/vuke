@@ -107,6 +107,10 @@ enum Command {
         #[arg(long, value_name = "BITS", value_parser = clap::value_parser!(u8).range(1..=64))]
         mask: Option<u8>,
 
+        /// Cascading filter: bits:target,bits:target,... (e.g., 5:0x15,10:0x202)
+        #[arg(long, value_name = "CASCADE")]
+        cascade: Option<String>,
+
         /// Specific analyzer(s) to run
         #[arg(long, value_enum)]
         analyzer: Option<Vec<AnalyzerType>>,
@@ -198,7 +202,7 @@ fn main() -> Result<()> {
 
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
 
-        Command::Analyze { key, fast, mask, analyzer, json } => run_analyze(&key, fast, mask, analyzer, json),
+        Command::Analyze { key, fast, mask, cascade, analyzer, json } => run_analyze(&key, fast, mask, cascade, analyzer, json),
     }
 }
 
@@ -321,11 +325,17 @@ fn run_analyze(
     key_input: &str,
     fast: bool,
     mask_bits: Option<u8>,
+    cascade_input: Option<String>,
     analyzer_types: Option<Vec<AnalyzerType>>,
     json_output: bool,
 ) -> Result<()> {
     use indicatif::ProgressBar;
-    use vuke::analyze::AnalysisConfig;
+    use vuke::analyze::{AnalysisConfig, parse_cascade};
+
+    let cascade_targets = match cascade_input {
+        Some(ref input) => Some(parse_cascade(input)?),
+        None => None,
+    };
 
     let key = parse_private_key(key_input)?;
     let metadata = KeyMetadata::from_key(&key);
@@ -340,7 +350,7 @@ fn run_analyze(
         }
     }
 
-    let config = AnalysisConfig { mask_bits };
+    let config = AnalysisConfig { mask_bits, cascade_targets };
 
     let analyzer_types = match analyzer_types {
         Some(types) => types,

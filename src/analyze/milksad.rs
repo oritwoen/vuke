@@ -4,6 +4,19 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use super::{Analyzer, AnalysisConfig, AnalysisResult, AnalysisStatus};
 
+#[derive(Debug, Clone)]
+pub struct CascadeMatch {
+    pub bits: u8,
+    pub target: u64,
+    pub full_key_hex: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CascadeResult {
+    pub seed: u32,
+    pub matches: Vec<CascadeMatch>,
+}
+
 pub struct MilksadAnalyzer;
 
 impl Analyzer for MilksadAnalyzer {
@@ -16,6 +29,10 @@ impl Analyzer for MilksadAnalyzer {
     }
 
     fn analyze(&self, key: &[u8; 32], config: &AnalysisConfig, progress: Option<&ProgressBar>) -> AnalysisResult {
+        if let Some(ref targets) = config.cascade_targets {
+            return self.analyze_cascading(targets, progress);
+        }
+        
         match config.mask_bits {
             Some(bits) => self.analyze_masked(key, bits, progress),
             None => self.analyze_exact(key, progress),
@@ -202,6 +219,130 @@ impl MilksadAnalyzer {
             }
         }
     }
+
+    fn analyze_cascading(&self, targets: &[(u8, u64)], progress: Option<&ProgressBar>) -> AnalysisResult {
+        let found_seed = AtomicU32::new(0);
+        let found = AtomicBool::new(false);
+
+        let total = u32::MAX as u64 + 1;
+        if let Some(pb) = progress {
+            pb.set_length(total);
+            pb.set_message("milksad cascade brute-force");
+        }
+
+        let chunk_size = 1_000_000u32;
+        let chunks: Vec<u32> = (0..=(u32::MAX / chunk_size)).collect();
+
+        let found_keys: std::sync::Mutex<Vec<[u8; 32]>> = std::sync::Mutex::new(Vec::new());
+
+        chunks.par_iter().for_each(|&chunk_idx| {
+            if found.load(Ordering::Acquire) {
+                return;
+            }
+
+            let start = chunk_idx.saturating_mul(chunk_size);
+            let end = start.saturating_add(chunk_size - 1);
+            let last_progress = start;
+
+            'seed_loop: for seed in start..=end {
+                if found.load(Ordering::Acquire) {
+                    if let Some(pb) = progress {
+                        pb.inc((seed - last_progress) as u64);
+                    }
+                    return;
+                }
+
+                let mut rng = Mt::new(seed);
+                let mut keys: Vec<[u8; 32]> = Vec::with_capacity(targets.len());
+
+                for (bits, target) in targets.iter() {
+                    let mut key = [0u8; 32];
+                    rng.fill_bytes(&mut key);
+
+                    let key_u64 = u64::from_be_bytes(key[24..32].try_into().unwrap());
+                    let mask: u64 = if *bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+                    let high_bit: u64 = 1u64 << (bits - 1);
+                    let masked = (key_u64 & mask) | high_bit;
+
+                    if masked != *target {
+                        continue 'seed_loop;
+                    }
+
+                    keys.push(key);
+                }
+
+                found_seed.store(seed, Ordering::Release);
+                found.store(true, Ordering::Release);
+                if let Ok(mut fk) = found_keys.lock() {
+                    *fk = keys;
+                }
+                if let Some(pb) = progress {
+                    pb.inc((seed - last_progress) as u64);
+                }
+                return;
+            }
+
+            if let Some(pb) = progress {
+                pb.inc((end - last_progress + 1) as u64);
+            }
+        });
+
+        if let Some(pb) = progress {
+            pb.finish_and_clear();
+        }
+
+        if found.load(Ordering::Acquire) {
+            let seed = found_seed.load(Ordering::Acquire);
+            let keys = found_keys.lock().unwrap().clone();
+
+            let matches: Vec<CascadeMatch> = targets
+                .iter()
+                .zip(keys.iter())
+                .map(|((bits, target), key)| CascadeMatch {
+                    bits: *bits,
+                    target: *target,
+                    full_key_hex: hex::encode(key),
+                })
+                .collect();
+
+            let cascade_result = CascadeResult { seed, matches };
+            let details = format_cascade_result(&cascade_result);
+
+            AnalysisResult {
+                analyzer: self.name(),
+                status: AnalysisStatus::Confirmed,
+                details: Some(details),
+            }
+        } else {
+            let target_desc: Vec<String> = targets
+                .iter()
+                .map(|(bits, target)| format!("P{}:0x{:x}", bits, target))
+                .collect();
+
+            AnalysisResult {
+                analyzer: self.name(),
+                status: AnalysisStatus::NotFound,
+                details: Some(format!(
+                    "checked {} seeds, cascade=[{}]",
+                    total,
+                    target_desc.join(",")
+                )),
+            }
+        }
+    }
+}
+
+fn format_cascade_result(result: &CascadeResult) -> String {
+    let mut lines = vec![format!("seed={} (0x{:08x})", result.seed, result.seed)];
+    
+    for m in &result.matches {
+        lines.push(format!(
+            "  P{}: target=0x{:x}, full_key={}",
+            m.bits, m.target, m.full_key_hex
+        ));
+    }
+    
+    lines.join("\n")
 }
 
 #[cfg(test)]
@@ -276,5 +417,79 @@ mod tests {
 
         assert!(masked >= high_bit);
         assert!(masked < (1u64 << mask_bits));
+    }
+
+    fn apply_mask(key: &[u8; 32], bits: u8) -> u64 {
+        let key_u64 = u64::from_be_bytes(key[24..32].try_into().unwrap());
+        let mask: u64 = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+        let high_bit: u64 = 1u64 << (bits - 1);
+        (key_u64 & mask) | high_bit
+    }
+
+    fn generate_cascade_targets(seed: u32, bit_widths: &[u8]) -> Vec<(u8, u64)> {
+        let mut rng = Mt::new(seed);
+        bit_widths
+            .iter()
+            .map(|&bits| {
+                let mut key = [0u8; 32];
+                rng.fill_bytes(&mut key);
+                (bits, apply_mask(&key, bits))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_cascade_sequential_rng() {
+        let seed = 12345u32;
+        let mut rng = Mt::new(seed);
+
+        let mut key1 = [0u8; 32];
+        let mut key2 = [0u8; 32];
+        rng.fill_bytes(&mut key1);
+        rng.fill_bytes(&mut key2);
+
+        assert_ne!(key1, key2);
+
+        let mut rng2 = Mt::new(seed);
+        let mut key1_verify = [0u8; 32];
+        let mut key2_verify = [0u8; 32];
+        rng2.fill_bytes(&mut key1_verify);
+        rng2.fill_bytes(&mut key2_verify);
+
+        assert_eq!(key1, key1_verify);
+        assert_eq!(key2, key2_verify);
+    }
+
+    #[test]
+    fn test_generate_cascade_targets() {
+        let seed = 42u32;
+        let targets = generate_cascade_targets(seed, &[5, 10, 20]);
+
+        assert_eq!(targets.len(), 3);
+        assert_eq!(targets[0].0, 5);
+        assert_eq!(targets[1].0, 10);
+        assert_eq!(targets[2].0, 20);
+
+        for (bits, target) in &targets {
+            let high_bit = 1u64 << (bits - 1);
+            assert!(target & high_bit != 0, "high bit must be set for P{}", bits);
+            assert!(*target < (1u64 << bits), "target must fit in {} bits", bits);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_cascade_finds_known_seed() {
+        let known_seed = 100u32;
+        let targets = generate_cascade_targets(known_seed, &[5, 10, 15]);
+
+        let config = AnalysisConfig {
+            mask_bits: None,
+            cascade_targets: Some(targets),
+        };
+
+        let result = MilksadAnalyzer.analyze(&[0u8; 32], &config, None);
+        assert_eq!(result.status, AnalysisStatus::Confirmed);
+        assert!(result.details.unwrap().contains(&format!("seed={}", known_seed)));
     }
 }

@@ -9,7 +9,7 @@ mod direct;
 mod heuristic;
 mod output;
 
-pub use key_parser::{parse_private_key, ParseError};
+pub use key_parser::{parse_private_key, parse_cascade, ParseError};
 pub use milksad::MilksadAnalyzer;
 pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
@@ -52,6 +52,7 @@ pub enum AnalysisStatus {
 pub struct AnalysisConfig {
     /// Formula: (full_key & (2^N - 1)) | 2^(N-1)
     pub mask_bits: Option<u8>,
+    pub cascade_targets: Option<Vec<(u8, u64)>>,
 }
 
 impl AnalysisStatus {

@@ -10,6 +10,7 @@ pub enum ParseError {
     InvalidHex(String),
     InvalidWif(String),
     InvalidDecimal(String),
+    InvalidCascade(String),
     UnknownFormat,
 }
 
@@ -19,6 +20,7 @@ impl std::fmt::Display for ParseError {
             ParseError::InvalidHex(e) => write!(f, "invalid hex: {}", e),
             ParseError::InvalidWif(e) => write!(f, "invalid WIF: {}", e),
             ParseError::InvalidDecimal(e) => write!(f, "invalid decimal: {}", e),
+            ParseError::InvalidCascade(e) => write!(f, "invalid cascade format: {}", e),
             ParseError::UnknownFormat => write!(f, "unknown key format"),
         }
     }
@@ -119,6 +121,99 @@ fn is_valid_secp256k1_scalar(key: &[u8; 32]) -> bool {
     key < &SECP256K1_ORDER
 }
 
+/// Parse cascade format: "bits:target,bits:target,..."
+/// 
+/// Examples:
+/// - "5:0x15,10:0x202,20:0xd2c55"
+/// - "5:21,10:514,20:863317"
+/// 
+/// Returns targets sorted by bits ascending (for early rejection optimization).
+pub fn parse_cascade(input: &str) -> Result<Vec<(u8, u64)>> {
+    let input = input.trim();
+    
+    if input.is_empty() {
+        return Err(anyhow!(ParseError::InvalidCascade("empty input".to_string())));
+    }
+    
+    let mut targets: Vec<(u8, u64)> = Vec::new();
+    
+    for part in input.split(',') {
+        let part = part.trim();
+        let (bits, target) = parse_cascade_entry(part)?;
+        targets.push((bits, target));
+    }
+    
+    if targets.len() < 2 {
+        return Err(anyhow!(ParseError::InvalidCascade(
+            "cascade requires at least 2 targets (use --mask for single target)".to_string()
+        )));
+    }
+    
+    // Sort by bits ascending for early rejection optimization
+    targets.sort_by_key(|(bits, _)| *bits);
+    
+    Ok(targets)
+}
+
+/// Parse single cascade entry: "bits:target"
+fn parse_cascade_entry(input: &str) -> Result<(u8, u64)> {
+    let parts: Vec<&str> = input.split(':').collect();
+    
+    if parts.len() != 2 {
+        return Err(anyhow!(ParseError::InvalidCascade(
+            format!("expected 'bits:target', got '{}'", input)
+        )));
+    }
+    
+    let bits_str = parts[0].trim();
+    let target_str = parts[1].trim();
+    
+    let bits: u8 = bits_str.parse().map_err(|_| {
+        anyhow!(ParseError::InvalidCascade(
+            format!("invalid bits '{}': must be 1-64", bits_str)
+        ))
+    })?;
+    
+    if bits == 0 || bits > 64 {
+        return Err(anyhow!(ParseError::InvalidCascade(
+            format!("bits must be 1-64, got {}", bits)
+        )));
+    }
+    
+    let target = if target_str.starts_with("0x") || target_str.starts_with("0X") {
+        let hex_str = &target_str[2..];
+        u64::from_str_radix(hex_str, 16).map_err(|_| {
+            anyhow!(ParseError::InvalidCascade(
+                format!("invalid hex target '{}'", target_str)
+            ))
+        })?
+    } else {
+        target_str.parse::<u64>().map_err(|_| {
+            anyhow!(ParseError::InvalidCascade(
+                format!("invalid decimal target '{}'", target_str)
+            ))
+        })?
+    };
+    
+    let max_value = if bits >= 64 { u64::MAX } else { (1u64 << bits) - 1 };
+    if target > max_value {
+        return Err(anyhow!(ParseError::InvalidCascade(
+            format!("target 0x{:x} exceeds {}-bit maximum (0x{:x})", target, bits, max_value)
+        )));
+    }
+    
+    // High bit must be set - this is a property of masked keys: (key & mask) | high_bit
+    let high_bit = 1u64 << (bits - 1);
+    if target & high_bit == 0 {
+        return Err(anyhow!(ParseError::InvalidCascade(
+            format!("target 0x{:x} must have high bit set for {}-bit mask (bit {})", 
+                    target, bits, bits - 1)
+        )));
+    }
+    
+    Ok((bits, target))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +302,77 @@ mod tests {
         assert!(parse_private_key("not a key").is_err());
         assert!(parse_private_key("").is_err());
         assert!(parse_private_key("zzzz").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_hex() {
+        let result = parse_cascade("5:0x15,10:0x202").unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], (5, 0x15));
+        assert_eq!(result[1], (10, 0x202));
+    }
+
+    #[test]
+    fn test_parse_cascade_decimal() {
+        let result = parse_cascade("5:21,10:514").unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], (5, 21));
+        assert_eq!(result[1], (10, 514));
+    }
+
+    #[test]
+    fn test_parse_cascade_mixed() {
+        let result = parse_cascade("5:0x15,10:514,20:0xd2c55").unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], (5, 0x15));
+        assert_eq!(result[1], (10, 514));
+        assert_eq!(result[2], (20, 0xd2c55));
+    }
+
+    #[test]
+    fn test_parse_cascade_sorts_by_bits() {
+        let result = parse_cascade("20:0xd2c55,5:0x15,10:0x202").unwrap();
+        assert_eq!(result[0].0, 5);
+        assert_eq!(result[1].0, 10);
+        assert_eq!(result[2].0, 20);
+    }
+
+    #[test]
+    fn test_parse_cascade_with_spaces() {
+        let result = parse_cascade(" 5:0x15 , 10:0x202 ").unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_cascade_single_target_fails() {
+        assert!(parse_cascade("5:0x15").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_empty_fails() {
+        assert!(parse_cascade("").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_invalid_format() {
+        assert!(parse_cascade("5-0x15,10-0x202").is_err());
+        assert!(parse_cascade("5:,10:0x202").is_err());
+        assert!(parse_cascade(":0x15,10:0x202").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_bits_out_of_range() {
+        assert!(parse_cascade("0:0x15,10:0x202").is_err());
+        assert!(parse_cascade("65:0x15,10:0x202").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_target_exceeds_bits() {
+        assert!(parse_cascade("5:0x20,10:0x202").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_high_bit_not_set() {
+        assert!(parse_cascade("5:0x05,10:0x202").is_err());
     }
 }

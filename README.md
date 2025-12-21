@@ -183,6 +183,38 @@ Analysis:
 vuke analyze 0x202 --mask 10 --analyzer milksad
 ```
 
+### Cascading filter (multi-puzzle verification)
+
+When analyzing masked keys, a single small-bit match has high false positive rates.
+The cascading filter verifies candidates against multiple known puzzle keys:
+
+```bash
+# Verify seed against multiple puzzles with increasing bit widths
+vuke analyze 0x16 --analyzer milksad --cascade "5:0x16,10:0x273,15:0x7a85"
+```
+
+Output:
+```
+Private Key: 0000000000000000000000000000000000000000000000000000000000000016
+Bit Length:  5
+Hamming Weight: 3
+---
+Analysis:
+  ✓ milksad: CONFIRMED (seed=100 (0x00000064)
+  P5: target=0x16, full_key=08961c8b18dbd0ab4337434767df7b69572fad6c4f00c186b03f43d88af70a26
+  P10: target=0x273, full_key=5e413501b4371e2862271f1f3550bc2f4236b6abe29ec9350e166bd322c3e673
+  P15: target=0x7a85, full_key=f133ff22f0aac1de185139938f664d10e4ac2de46be7d29f3c458e353a1efa85)
+```
+
+The cascade format is `bits:target,bits:target,...` where:
+- `bits` is the mask width (1-64)
+- `target` is hex (with 0x prefix) or decimal
+
+Probability analysis:
+- P5 alone: 1/16 chance of false positive
+- P5 + P10: 1/16 × 1/512 = 1/8192
+- P5 + P10 + P15: virtually impossible false positive
+
 ## Supported Transforms
 
 | Transform | Description | Use Case |
@@ -200,6 +232,7 @@ vuke analyze 0x202 --mask 10 --analyzer milksad
 |----------|--------|----------|
 | `milksad` | Brute-force 2^32 seeds | Check if key is Milksad victim |
 | `milksad --mask N` | Brute-force with N-bit masking | BTC1000-style puzzle analysis |
+| `milksad --cascade` | Multi-target sequential verification | Reduce false positives in puzzle research |
 | `direct` | Pattern detection | Detect small seeds, ASCII strings |
 | `heuristic` | Statistical analysis | Entropy, hamming weight anomalies |
 
