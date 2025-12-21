@@ -12,6 +12,7 @@
 - *(aur)* Add AUR publish workflow
 - *(vuke)* Add crates.io publish workflow (#6)
 - Add justfile
+- *(release)* V0.2.0
 ## [0.1.0] - 2025-12-16
 
 ### 🚀 Features
