@@ -48,6 +48,12 @@ pub enum AnalysisStatus {
     Unknown,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AnalysisConfig {
+    /// Formula: (full_key & (2^N - 1)) | 2^(N-1)
+    pub mask_bits: Option<u8>,
+}
+
 impl AnalysisStatus {
     /// Symbol for terminal output
     pub fn symbol(&self) -> &'static str {
@@ -78,7 +84,12 @@ pub trait Analyzer: Send + Sync {
     /// Analyze a key and return the result.
     /// 
     /// Progress bar is optional - used for long-running analyses like Milksad brute-force.
-    fn analyze(&self, key: &[u8; 32], progress: Option<&ProgressBar>) -> AnalysisResult;
+    fn analyze(&self, key: &[u8; 32], config: &AnalysisConfig, progress: Option<&ProgressBar>) -> AnalysisResult;
+
+    /// Whether this analyzer supports masked key analysis
+    fn supports_mask(&self) -> bool {
+        false
+    }
 
     /// Whether this analyzer requires brute-force (slow)
     fn is_brute_force(&self) -> bool {

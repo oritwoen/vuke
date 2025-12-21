@@ -155,6 +155,34 @@ Specific analyzer:
 vuke analyze --analyzer milksad c4bbcb1f...
 ```
 
+### Masked key analysis (BTC1000-style puzzles)
+
+Some Bitcoin puzzles use a masking scheme where:
+1. A full 256-bit key is generated (e.g., from MT19937)
+2. The key is masked to N bits with highest bit forced to 1
+
+Formula: `masked_key = (full_key & (2^N - 1)) | 2^(N-1)`
+
+```bash
+# Analyze 5-bit puzzle key 0x15
+vuke analyze 0x15 --mask 5 --analyzer milksad
+```
+
+Output:
+```
+Private Key: 0000000000000000000000000000000000000000000000000000000000000015
+Bit Length:  5
+Hamming Weight: 3
+---
+Analysis:
+  ✓ milksad: CONFIRMED (seed=1610000002, full_key=7ed2...5055, masked=0x15, mask_bits=5, formula=(key & 0x1f) | 0x10)
+```
+
+```bash
+# Analyze 10-bit puzzle key
+vuke analyze 0x202 --mask 10 --analyzer milksad
+```
+
 ## Supported Transforms
 
 | Transform | Description | Use Case |
@@ -171,6 +199,7 @@ vuke analyze --analyzer milksad c4bbcb1f...
 | Analyzer | Method | Use Case |
 |----------|--------|----------|
 | `milksad` | Brute-force 2^32 seeds | Check if key is Milksad victim |
+| `milksad --mask N` | Brute-force with N-bit masking | BTC1000-style puzzle analysis |
 | `direct` | Pattern detection | Detect small seeds, ASCII strings |
 | `heuristic` | Statistical analysis | Entropy, hamming weight anomalies |
 
