@@ -190,7 +190,7 @@ impl MilksadAnalyzer {
                 analyzer: self.name(),
                 status: AnalysisStatus::Confirmed,
                 details: Some(format!(
-                    "seed={}, full_key={}, masked=0x{:x}, mask_bits={}, formula=(key & 0x{:x}) | 0x{:x}",
+                    "seed = {}, full_key={}, masked=0x{:x}, mask_bits={}, formula=(key & 0x{:x}) | 0x{:x}",
                     seed, full_key_hex, masked_value, mask_bits, mask, high_bit
                 )),
             }

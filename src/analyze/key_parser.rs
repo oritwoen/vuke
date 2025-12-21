@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_parse_short_hex_without_prefix() {
-        let key = parse_private_key("0x1f").unwrap();
+        let key = parse_private_key("1f").unwrap();
         assert_eq!(key[31], 0x1f);
     }
 
