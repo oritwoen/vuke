@@ -200,7 +200,7 @@ Bit Length:  5
 Hamming Weight: 3
 ---
 Analysis:
-  ✓ milksad: CONFIRMED (seed=100 (0x00000064)
+  ✓ milksad: CONFIRMED (seed=100 (0x00000064))
   P5: target=0x16, full_key=08961c8b18dbd0ab4337434767df7b69572fad6c4f00c186b03f43d88af70a26
   P10: target=0x273, full_key=5e413501b4371e2862271f1f3550bc2f4236b6abe29ec9350e166bd322c3e673
   P15: target=0x7a85, full_key=f133ff22f0aac1de185139938f664d10e4ac2de46be7d29f3c458e353a1efa85)

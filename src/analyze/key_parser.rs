@@ -139,7 +139,17 @@ pub fn parse_cascade(input: &str) -> Result<Vec<(u8, u64)>> {
     
     for part in input.split(',') {
         let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
         let (bits, target) = parse_cascade_entry(part)?;
+        
+        if targets.iter().any(|(b, t)| *b == bits && *t == target) {
+            return Err(anyhow!(ParseError::InvalidCascade(
+                format!("duplicate target {}:{}", bits, target)
+            )));
+        }
+        
         targets.push((bits, target));
     }
     
@@ -374,5 +384,18 @@ mod tests {
     #[test]
     fn test_parse_cascade_high_bit_not_set() {
         assert!(parse_cascade("5:0x05,10:0x202").is_err());
+    }
+
+    #[test]
+    fn test_parse_cascade_skips_empty_segments() {
+        let result = parse_cascade("5:0x15,,10:0x202").unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], (5, 0x15));
+        assert_eq!(result[1], (10, 0x202));
+    }
+
+    #[test]
+    fn test_parse_cascade_duplicate_target_fails() {
+        assert!(parse_cascade("5:0x15,5:0x15,10:0x202").is_err());
     }
 }
