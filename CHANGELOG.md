@@ -1,3 +1,12 @@
+## [0.3.0] - 2025-12-21
+
+### 🚀 Features
+
+- *(analyze)* Add masked key analysis for BTC1000-style puzzles (#12)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.2.0
 ## [0.2.0] - 2025-12-20
 
 ### 🚀 Features
