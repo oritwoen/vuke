@@ -48,7 +48,7 @@ pub fn parse_private_key(input: &str) -> Result<[u8; 32]> {
 fn try_parse_hex(input: &str) -> Option<[u8; 32]> {
     let input = input.strip_prefix("0x").unwrap_or(input);
 
-    if input.len() != 64 {
+    if input.is_empty() || input.len() > 64 {
         return None;
     }
 
@@ -56,7 +56,9 @@ fn try_parse_hex(input: &str) -> Option<[u8; 32]> {
         return None;
     }
 
-    let bytes = hex::decode(input).ok()?;
+    let padded = format!("{:0>64}", input);
+    let bytes = hex::decode(&padded).ok()?;
+    
     let mut key = [0u8; 32];
     key.copy_from_slice(&bytes);
     Some(key)
@@ -134,6 +136,35 @@ mod tests {
         let hex = "0xc4bbcb1fbec99d65bf59d85c8cb62ee2db963f0fe106f483d9afa73bd4e39a8a";
         let key = parse_private_key(hex).unwrap();
         assert_eq!(key[0], 0xc4);
+    }
+
+    #[test]
+    fn test_parse_short_hex_5_bits() {
+        let key = parse_private_key("0x15").unwrap();
+        assert_eq!(key[31], 0x15);
+        assert_eq!(key[30], 0x00);
+        assert_eq!(key[0], 0x00);
+    }
+
+    #[test]
+    fn test_parse_short_hex_10_bits() {
+        let key = parse_private_key("0x202").unwrap();
+        assert_eq!(key[31], 0x02);
+        assert_eq!(key[30], 0x02);
+    }
+
+    #[test]
+    fn test_parse_short_hex_20_bits() {
+        let key = parse_private_key("0xd2c55").unwrap();
+        assert_eq!(key[31], 0x55);
+        assert_eq!(key[30], 0x2c);
+        assert_eq!(key[29], 0x0d);
+    }
+
+    #[test]
+    fn test_parse_short_hex_without_prefix() {
+        let key = parse_private_key("1f").unwrap();
+        assert_eq!(key[31], 0x1f);
     }
 
     #[test]

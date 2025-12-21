@@ -103,6 +103,10 @@ enum Command {
         #[arg(long)]
         fast: bool,
 
+        /// Analyze as N-bit masked key (highest bit forced to 1)
+        #[arg(long, value_name = "BITS", value_parser = clap::value_parser!(u8).range(1..=64))]
+        mask: Option<u8>,
+
         /// Specific analyzer(s) to run
         #[arg(long, value_enum)]
         analyzer: Option<Vec<AnalyzerType>>,
@@ -194,7 +198,7 @@ fn main() -> Result<()> {
 
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
 
-        Command::Analyze { key, fast, analyzer, json } => run_analyze(&key, fast, analyzer, json),
+        Command::Analyze { key, fast, mask, analyzer, json } => run_analyze(&key, fast, mask, analyzer, json),
     }
 }
 
@@ -316,13 +320,27 @@ fn create_transform(t: TransformType) -> Box<dyn Transform> {
 fn run_analyze(
     key_input: &str,
     fast: bool,
+    mask_bits: Option<u8>,
     analyzer_types: Option<Vec<AnalyzerType>>,
     json_output: bool,
 ) -> Result<()> {
     use indicatif::ProgressBar;
+    use vuke::analyze::AnalysisConfig;
 
     let key = parse_private_key(key_input)?;
     let metadata = KeyMetadata::from_key(&key);
+
+    if let Some(bits) = mask_bits {
+        let key_bits = vuke::analyze::calculate_bit_length(&key);
+        if key_bits > bits as u16 {
+            eprintln!(
+                "Warning: key has {} bits but mask is {} bits. Key will be treated as already masked.",
+                key_bits, bits
+            );
+        }
+    }
+
+    let config = AnalysisConfig { mask_bits };
 
     let analyzer_types = match analyzer_types {
         Some(types) => types,
@@ -346,7 +364,7 @@ fn run_analyze(
             None
         };
 
-        let result = analyzer.analyze(&key, progress.as_ref());
+        let result = analyzer.analyze(&key, &config, progress.as_ref());
         results.push(result);
     }
 

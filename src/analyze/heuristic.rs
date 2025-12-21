@@ -1,5 +1,5 @@
 use indicatif::ProgressBar;
-use super::{Analyzer, AnalysisResult, AnalysisStatus};
+use super::{Analyzer, AnalysisConfig, AnalysisResult, AnalysisStatus};
 
 pub struct HeuristicAnalyzer;
 
@@ -8,7 +8,15 @@ impl Analyzer for HeuristicAnalyzer {
         "heuristic"
     }
 
-    fn analyze(&self, key: &[u8; 32], _progress: Option<&ProgressBar>) -> AnalysisResult {
+    fn analyze(&self, key: &[u8; 32], config: &AnalysisConfig, _progress: Option<&ProgressBar>) -> AnalysisResult {
+        if config.mask_bits.is_some() {
+            return AnalysisResult {
+                analyzer: self.name(),
+                status: AnalysisStatus::Unknown,
+                details: Some("masked analysis not supported".to_string()),
+            };
+        }
+
         let entropy = calculate_byte_entropy(key);
         let hamming = key.iter().map(|b| b.count_ones()).sum::<u32>();
 
@@ -19,7 +27,7 @@ impl Analyzer for HeuristicAnalyzer {
         }
 
         // 256 bits × 0.5 expected = 128 mean, σ ≈ 8, so 3σ range is 104-152
-        if hamming < 104 || hamming > 152 {
+        if !(104..=152).contains(&hamming) {
             observations.push(format!("unusual hamming weight ({})", hamming));
         }
 
@@ -89,14 +97,14 @@ mod tests {
             0xdb, 0x96, 0x3f, 0x0f, 0xe1, 0x06, 0xf4, 0x83,
             0xd9, 0xaf, 0xa7, 0x3b, 0xd4, 0xe3, 0x9a, 0x8a,
         ];
-        let result = HeuristicAnalyzer.analyze(&key, None);
+        let result = HeuristicAnalyzer.analyze(&key, &AnalysisConfig::default(), None);
         assert_eq!(result.status, AnalysisStatus::Unknown);
     }
 
     #[test]
     fn test_low_entropy_key() {
         let key = [0u8; 32];
-        let result = HeuristicAnalyzer.analyze(&key, None);
+        let result = HeuristicAnalyzer.analyze(&key, &AnalysisConfig::default(), None);
         assert_eq!(result.status, AnalysisStatus::Possible);
     }
 
@@ -106,7 +114,7 @@ mod tests {
         for i in 0..32 {
             key[i] = (i % 4) as u8 + 1;
         }
-        let result = HeuristicAnalyzer.analyze(&key, None);
+        let result = HeuristicAnalyzer.analyze(&key, &AnalysisConfig::default(), None);
         assert_eq!(result.status, AnalysisStatus::Possible);
     }
 }
