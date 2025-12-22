@@ -62,7 +62,7 @@ impl XorshiftAnalyzer {
             let start = chunk_idx.saturating_mul(chunk_size);
             let end = start.saturating_add(chunk_size - 1);
 
-            if start == u64::MAX {
+            if end < start || start == u64::MAX {
                 break;
             }
 
@@ -310,6 +310,7 @@ mod tests {
     use super::*;
 
     fn apply_mask(key: &[u8; 32], bits: u8) -> u64 {
+        assert!(bits > 0, "bits must be > 0");
         let key_u64 = u64::from_be_bytes(key[24..32].try_into().unwrap());
         let mask: u64 = if bits >= 64 {
             u64::MAX
