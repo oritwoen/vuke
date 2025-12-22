@@ -228,3 +228,112 @@ mod tests {
         assert_eq!(BORLAND.max_seed(), u32::MAX as u64);
     }
 }
+
+/// Parsed LCG configuration from CLI string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LcgConfig {
+    pub variant: Option<LcgVariant>,
+    pub endian: LcgEndian,
+}
+
+impl LcgConfig {
+    /// Parse LCG configuration from string.
+    ///
+    /// Formats:
+    /// - "lcg" - all variants, big-endian
+    /// - "lcg:le" - all variants, little-endian  
+    /// - "lcg:glibc" - specific variant, big-endian
+    /// - "lcg:glibc:le" - specific variant, little-endian
+    pub fn parse(s: &str) -> Result<Self, String> {
+        let s = s.to_lowercase();
+        let s = s.trim_end_matches(':');
+        let parts: Vec<&str> = s.split(':').collect();
+        
+        match parts.as_slice() {
+            ["lcg"] => Ok(LcgConfig { variant: None, endian: LcgEndian::Big }),
+            ["lcg", v] => {
+                if let Some(e) = LcgEndian::from_str(v) {
+                    Ok(LcgConfig { variant: None, endian: e })
+                } else if let Some(var) = LcgVariant::from_str(v) {
+                    Ok(LcgConfig { variant: Some(var), endian: LcgEndian::Big })
+                } else {
+                    Err(format!(
+                        "Invalid LCG variant or endian: '{}'. Valid variants: glibc, minstd, msvc, borland. Valid endian: be, le",
+                        v
+                    ))
+                }
+            }
+            ["lcg", v, e] => {
+                let variant = LcgVariant::from_str(v).ok_or_else(|| {
+                    format!("Invalid LCG variant: '{}'. Valid: glibc, minstd, msvc, borland", v)
+                })?;
+                let endian = LcgEndian::from_str(e).ok_or_else(|| {
+                    format!("Invalid endian: '{}'. Valid: be, le", e)
+                })?;
+                Ok(LcgConfig { variant: Some(variant), endian })
+            }
+            _ => Err("Invalid LCG format. Use: lcg, lcg:variant, lcg:endian, lcg:variant:endian".to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_lcg_only() {
+        let config = LcgConfig::parse("lcg").unwrap();
+        assert_eq!(config.variant, None);
+        assert_eq!(config.endian, LcgEndian::Big);
+    }
+
+    #[test]
+    fn test_parse_lcg_with_endian() {
+        let config = LcgConfig::parse("lcg:le").unwrap();
+        assert_eq!(config.variant, None);
+        assert_eq!(config.endian, LcgEndian::Little);
+    }
+
+    #[test]
+    fn test_parse_lcg_with_variant() {
+        let config = LcgConfig::parse("lcg:glibc").unwrap();
+        assert_eq!(config.variant, Some(GLIBC));
+        assert_eq!(config.endian, LcgEndian::Big);
+    }
+
+    #[test]
+    fn test_parse_lcg_with_variant_and_endian() {
+        let config = LcgConfig::parse("lcg:minstd:le").unwrap();
+        assert_eq!(config.variant, Some(MINSTD));
+        assert_eq!(config.endian, LcgEndian::Little);
+    }
+
+    #[test]
+    fn test_parse_trailing_colon_trimmed() {
+        let config = LcgConfig::parse("lcg:").unwrap();
+        assert_eq!(config.variant, None);
+        assert_eq!(config.endian, LcgEndian::Big);
+    }
+
+    #[test]
+    fn test_parse_case_insensitive() {
+        let config = LcgConfig::parse("LCG:GLIBC:BE").unwrap();
+        assert_eq!(config.variant, Some(GLIBC));
+        assert_eq!(config.endian, LcgEndian::Big);
+    }
+
+    #[test]
+    fn test_parse_invalid_variant() {
+        let result = LcgConfig::parse("lcg:invalid");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid LCG variant or endian"));
+    }
+
+    #[test]
+    fn test_parse_invalid_endian() {
+        let result = LcgConfig::parse("lcg:glibc:invalid");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid endian"));
+    }
+}

@@ -52,82 +52,32 @@ impl LcgAnalyzer {
         variant: &LcgVariant,
         progress: Option<&ProgressBar>,
     ) -> Option<AnalysisResult> {
-        let found_seed = AtomicU32::new(0);
-        let found = AtomicBool::new(false);
-
-        let max_seed = variant.max_seed().min(u32::MAX as u64) as u32;
-        let total = max_seed as u64 + 1;
-
-        if let Some(pb) = progress {
-            pb.set_length(total);
-            pb.set_message(format!("lcg:{} brute-force", variant.name));
-        }
-
-        let chunk_size = 1_000_000u32;
-        let progress_interval = 100_000u32;
-        let num_chunks = (max_seed / chunk_size) + 1;
-        let chunks: Vec<u32> = (0..num_chunks).collect();
-
+        let target_key = *key;
         let endian = self.endian;
 
-        chunks.par_iter().for_each(|&chunk_idx| {
-            if found.load(Ordering::Acquire) {
-                return;
-            }
-
-            let start = chunk_idx.saturating_mul(chunk_size);
-            let end = start.saturating_add(chunk_size - 1).min(max_seed);
-            let mut last_progress = start;
-
-            for seed in start..=end {
-                if found.load(Ordering::Acquire) {
-                    if let Some(pb) = progress {
-                        pb.inc((seed - last_progress) as u64);
-                    }
-                    return;
+        let result = brute_force_search(
+            variant,
+            progress,
+            &format!("lcg:{} brute-force", variant.name),
+            move |seed, var, end| {
+                let candidate = generate_key(seed, var, end);
+                if candidate == target_key {
+                    Some(candidate)
+                } else {
+                    None
                 }
+            },
+            endian,
+        );
 
-                let candidate = generate_key(seed, variant, endian);
-
-                if candidate == *key {
-                    found_seed.store(seed, Ordering::Release);
-                    found.store(true, Ordering::Release);
-                    if let Some(pb) = progress {
-                        pb.inc((seed - last_progress) as u64);
-                    }
-                    return;
-                }
-
-                if let Some(pb) = progress {
-                    if seed - last_progress >= progress_interval {
-                        pb.inc((seed - last_progress) as u64);
-                        last_progress = seed;
-                    }
-                }
-            }
-
-            if let Some(pb) = progress {
-                pb.inc((end - last_progress + 1) as u64);
-            }
-        });
-
-        if let Some(pb) = progress {
-            pb.finish_and_clear();
-        }
-
-        if found.load(Ordering::Acquire) {
-            let seed = found_seed.load(Ordering::Acquire);
-            Some(AnalysisResult {
-                analyzer: "lcg",
-                status: AnalysisStatus::Confirmed,
-                details: Some(format!(
-                    "variant={}, seed={}, endian={}",
-                    variant.name, seed, self.endian.as_str()
-                )),
-            })
-        } else {
-            None
-        }
+        result.map(|(seed, _)| AnalysisResult {
+            analyzer: "lcg",
+            status: AnalysisStatus::Confirmed,
+            details: Some(format!(
+                "variant={}, seed={}, endian={}",
+                variant.name, seed, self.endian.as_str()
+            )),
+        })
     }
 
     fn analyze_masked(
@@ -142,97 +92,120 @@ impl LcgAnalyzer {
         }
 
         let target_u64 = u64::from_be_bytes(target[24..32].try_into().unwrap());
-
         let mask: u64 = if mask_bits >= 64 { u64::MAX } else { (1u64 << mask_bits) - 1 };
         let high_bit: u64 = 1u64 << (mask_bits - 1);
-
-        let found_seed = AtomicU32::new(0);
-        let found = AtomicBool::new(false);
-        let found_full_key = Mutex::new([0u8; 32]);
-
-        let max_seed = variant.max_seed().min(u32::MAX as u64) as u32;
-        let total = max_seed as u64 + 1;
-
-        if let Some(pb) = progress {
-            pb.set_length(total);
-            pb.set_message(format!("lcg:{} masked brute-force", variant.name));
-        }
-
-        let chunk_size = 1_000_000u32;
-        let progress_interval = 100_000u32;
-        let num_chunks = (max_seed / chunk_size) + 1;
-        let chunks: Vec<u32> = (0..num_chunks).collect();
-
         let endian = self.endian;
 
-        chunks.par_iter().for_each(|&chunk_idx| {
-            if found.load(Ordering::Acquire) {
-                return;
-            }
-
-            let start = chunk_idx.saturating_mul(chunk_size);
-            let end = start.saturating_add(chunk_size - 1).min(max_seed);
-            let mut last_progress = start;
-
-            for seed in start..=end {
-                if found.load(Ordering::Acquire) {
-                    if let Some(pb) = progress {
-                        pb.inc((seed - last_progress) as u64);
-                    }
-                    return;
-                }
-
-                let candidate = generate_key(seed, variant, endian);
+        let result = brute_force_search(
+            variant,
+            progress,
+            &format!("lcg:{} masked brute-force", variant.name),
+            move |seed, var, end| {
+                let candidate = generate_key(seed, var, end);
                 let full_key_u64 = u64::from_be_bytes(candidate[24..32].try_into().unwrap());
                 let masked = (full_key_u64 & mask) | high_bit;
-
                 if masked == target_u64 {
-                    found_seed.store(seed, Ordering::Release);
-                    found.store(true, Ordering::Release);
-                    if let Ok(mut fk) = found_full_key.lock() {
-                        *fk = candidate;
-                    }
-                    if let Some(pb) = progress {
-                        pb.inc((seed - last_progress) as u64);
-                    }
-                    return;
+                    Some(candidate)
+                } else {
+                    None
                 }
+            },
+            endian,
+        );
 
-                if let Some(pb) = progress {
-                    if seed - last_progress >= progress_interval {
-                        pb.inc((seed - last_progress) as u64);
-                        last_progress = seed;
-                    }
-                }
-            }
-
-            if let Some(pb) = progress {
-                pb.inc((end - last_progress + 1) as u64);
-            }
-        });
-
-        if let Some(pb) = progress {
-            pb.finish_and_clear();
-        }
-
-        if found.load(Ordering::Acquire) {
-            let seed = found_seed.load(Ordering::Acquire);
-            let full_key = *found_full_key.lock().unwrap();
+        result.map(|(seed, full_key)| {
             let full_key_hex = hex::encode(full_key);
             let full_key_u64 = u64::from_be_bytes(full_key[24..32].try_into().unwrap());
             let masked_value = (full_key_u64 & mask) | high_bit;
 
-            Some(AnalysisResult {
+            AnalysisResult {
                 analyzer: "lcg",
                 status: AnalysisStatus::Confirmed,
                 details: Some(format!(
                     "variant={}, seed={}, full_key={}, masked=0x{:x}, mask_bits={}, endian={}, formula=(key & 0x{:x}) | 0x{:x}",
                     variant.name, seed, full_key_hex, masked_value, mask_bits, self.endian.as_str(), mask, high_bit
                 )),
-            })
-        } else {
-            None
+            }
+        })
+    }
+}
+
+fn brute_force_search<F>(
+    variant: &LcgVariant,
+    progress: Option<&ProgressBar>,
+    message: &str,
+    matcher: F,
+    endian: LcgEndian,
+) -> Option<(u32, [u8; 32])>
+where
+    F: Fn(u32, &LcgVariant, LcgEndian) -> Option<[u8; 32]> + Sync,
+{
+    let found_seed = AtomicU32::new(0);
+    let found = AtomicBool::new(false);
+    let found_key = Mutex::new([0u8; 32]);
+
+    let max_seed = variant.max_seed().min(u32::MAX as u64) as u32;
+    let total = max_seed as u64 + 1;
+
+    if let Some(pb) = progress {
+        pb.set_length(total);
+        pb.set_message(message.to_string());
+    }
+
+    let chunk_size = 1_000_000u32;
+    let progress_interval = 100_000u32;
+    let num_chunks = (max_seed / chunk_size) + 1;
+    let chunks: Vec<u32> = (0..num_chunks).collect();
+
+    chunks.par_iter().for_each(|&chunk_idx| {
+        if found.load(Ordering::Acquire) {
+            return;
         }
+
+        let start = chunk_idx.saturating_mul(chunk_size);
+        let end = start.saturating_add(chunk_size - 1).min(max_seed);
+        let mut last_progress = start;
+
+        for seed in start..=end {
+            if found.load(Ordering::Acquire) {
+                return;
+            }
+
+            if let Some(key) = matcher(seed, variant, endian) {
+                found_seed.store(seed, Ordering::Release);
+                found.store(true, Ordering::Release);
+                if let Ok(mut fk) = found_key.lock() {
+                    *fk = key;
+                }
+                if let Some(pb) = progress {
+                    pb.inc((seed - last_progress) as u64);
+                }
+                return;
+            }
+
+            if let Some(pb) = progress {
+                if seed - last_progress >= progress_interval {
+                    pb.inc((seed - last_progress) as u64);
+                    last_progress = seed;
+                }
+            }
+        }
+
+        if let Some(pb) = progress {
+            pb.inc((end - last_progress + 1) as u64);
+        }
+    });
+
+    if let Some(pb) = progress {
+        pb.finish_and_clear();
+    }
+
+    if found.load(Ordering::Acquire) {
+        let seed = found_seed.load(Ordering::Acquire);
+        let key = *found_key.lock().unwrap();
+        Some((seed, key))
+    } else {
+        None
     }
 }
 

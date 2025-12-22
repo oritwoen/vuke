@@ -52,7 +52,10 @@ impl Transform for LcgTransform {
                     if val <= variant.max_seed() {
                         let key = generate_key(val as u32, variant, self.endian);
                         let source = if variants.len() > 1 {
-                            format!("{}:{}:{}", input.string_val, variant.name, self.endian.as_str())
+                            match self.endian {
+                                LcgEndian::Big => format!("{}:{}", input.string_val, variant.name),
+                                LcgEndian::Little => format!("{}:{}:{}", input.string_val, variant.name, self.endian.as_str()),
+                            }
                         } else {
                             input.string_val.clone()
                         };
