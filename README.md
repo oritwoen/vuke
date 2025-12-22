@@ -216,7 +216,7 @@ vuke analyze 0x202 --mask 10 --analyzer milksad
 
 ### Cascading filter (multi-puzzle verification)
 
-When analyzing masked keys, a single small-bit match hashigh false positive rates.
+When analyzing masked keys, a single small-bit match has high false positive rates.
 The cascading filter verifies candidates against multiple known puzzle keys:
 
 ```bash
@@ -270,7 +270,7 @@ Progress shows search rate and cascade filter hits:
 | `double_sha256` | SHA256(SHA256(input)) | Bitcoin-style hashing |
 | `md5` | MD5(input) duplicated to 32 bytes | Legacy weak hashing |
 | `milksad` | MT19937 PRNG with 32-bit seed | CVE-2023-39910 (libbitcoin) |
-| `mt64`| MT19937-64 PRNG with 64-bit seed | 64-bit seed hypothesis testing |
+| `mt64` | MT19937-64 PRNG with 64-bit seed | 64-bit seed hypothesis testing |
 | `armory` | Armory HD derivation chain | Pre-BIP32 wallets |
 | `lcg[:variant][:endian]` | LCG PRNG with 32-bit seed | Legacy C stdlib rand() |
 
