@@ -1,8 +1,24 @@
+## [0.6.0] - 2025-12-22
+
+### 🚀 Features
+
+- *(analyze)* Add MT19937-64 analyzer with 64-bit seed support (#22)
+- *(analyze)* Add xorshift PRNG analyzer (#24)
+- *(multibit)* Add MultiBit HD bug support (#26)
+- *(electrum)* Add pre-BIP39 derivation (#28)
+
+### ⚙️ Miscellaneous Tasks
+
+- Add CodSpeed performance benchmarking (#23)
 ## [0.5.0] - 2025-12-22
 
 ### 🚀 Features
 
 - *(analyze)* Add LCG analyzer (#18)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.5.0
 ## [0.4.0] - 2025-12-21
 
 ### 🚀 Features
