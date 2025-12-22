@@ -11,6 +11,7 @@ mod milksad;
 mod mt64;
 mod armory;
 mod lcg;
+mod xorshift;
 
 pub use input::Input;
 pub use direct::DirectTransform;
@@ -21,6 +22,7 @@ pub use milksad::MilksadTransform;
 pub use mt64::Mt64Transform;
 pub use armory::ArmoryTransform;
 pub use lcg::LcgTransform;
+pub use xorshift::XorshiftTransform;
 
 /// 32-byte private key
 pub type Key = [u8; 32];
@@ -48,6 +50,9 @@ pub enum TransformType {
         variant: Option<crate::lcg::LcgVariant>,
         endian: crate::lcg::LcgEndian,
     },
+    Xorshift {
+        variant: Option<crate::xorshift::XorshiftVariant>,
+    },
 }
 
 impl TransformType {
@@ -67,6 +72,13 @@ impl TransformType {
                     None => LcgTransform::new(),
                 };
                 Box::new(transform.with_endian(*endian))
+            }
+            TransformType::Xorshift { variant } => {
+                let transform = match variant {
+                    Some(v) => XorshiftTransform::with_variant(*v),
+                    None => XorshiftTransform::new(),
+                };
+                Box::new(transform)
             }
         }
     }
@@ -89,8 +101,14 @@ impl TransformType {
                     endian: config.endian,
                 })
             }
+            _ if s_lower == "xorshift" || s_lower.starts_with("xorshift:") => {
+                let config = crate::xorshift::XorshiftConfig::parse(&s_lower)?;
+                Ok(TransformType::Xorshift {
+                    variant: config.variant,
+                })
+            }
             _ => Err(format!(
-                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, lcg[:variant][:endian]",
+                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, lcg[:variant][:endian], xorshift[:variant]",
                 s
             )),
         }

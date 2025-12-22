@@ -9,6 +9,7 @@ mod mt64;
 mod direct;
 mod heuristic;
 mod lcg;
+mod xorshift;
 mod output;
 
 pub use key_parser::{parse_private_key, parse_cascade, ParseError};
@@ -17,6 +18,7 @@ pub use mt64::Mt64Analyzer;
 pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
 pub use lcg::LcgAnalyzer;
+pub use xorshift::XorshiftAnalyzer;
 pub use output::{format_results, format_results_json};
 
 use indicatif::ProgressBar;
@@ -113,6 +115,9 @@ pub enum AnalyzerType {
         variant: Option<crate::lcg::LcgVariant>,
         endian: crate::lcg::LcgEndian,
     },
+    Xorshift {
+        variant: Option<crate::xorshift::XorshiftVariant>,
+    },
 }
 
 impl AnalyzerType {
@@ -130,6 +135,13 @@ impl AnalyzerType {
                 };
                 Box::new(analyzer.with_endian(*endian))
             }
+            AnalyzerType::Xorshift { variant } => {
+                let analyzer = match variant {
+                    Some(v) => XorshiftAnalyzer::with_variant(*v),
+                    None => XorshiftAnalyzer::new(),
+                };
+                Box::new(analyzer)
+            }
         }
     }
 
@@ -139,6 +151,7 @@ impl AnalyzerType {
             AnalyzerType::Milksad,
             AnalyzerType::Mt64,
             AnalyzerType::Lcg { variant: None, endian: crate::lcg::LcgEndian::Big },
+            AnalyzerType::Xorshift { variant: None },
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
         ]
@@ -167,7 +180,13 @@ impl AnalyzerType {
                     endian: config.endian,
                 })
             }
-            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, direct, heuristic, lcg[:variant][:endian]", s)),
+            _ if s == "xorshift" || s.starts_with("xorshift:") => {
+                let config = crate::xorshift::XorshiftConfig::parse(&s)?;
+                Ok(AnalyzerType::Xorshift {
+                    variant: config.variant,
+                })
+            }
+            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, direct, heuristic, lcg[:variant][:endian], xorshift[:variant]", s)),
         }
     }
 }

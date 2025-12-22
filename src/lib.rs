@@ -8,6 +8,7 @@ pub mod lcg;
 pub mod mt64;
 pub mod source;
 pub mod transform;
+pub mod xorshift;
 pub mod derive;
 pub mod matcher;
 pub mod output;
