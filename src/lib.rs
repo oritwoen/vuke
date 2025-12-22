@@ -5,6 +5,7 @@
 
 pub mod analyze;
 pub mod lcg;
+pub mod mt64;
 pub mod source;
 pub mod transform;
 pub mod derive;
