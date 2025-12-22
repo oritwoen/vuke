@@ -123,6 +123,18 @@ enum Command {
         #[arg(long, value_parser = parse_analyzer_type)]
         analyzer: Option<Vec<AnalyzerType>>,
 
+        /// BIP39 mnemonic to test (for multibit-hd analyzer)
+        #[arg(long, value_name = "WORDS")]
+        mnemonic: Option<String>,
+
+        /// File with BIP39 mnemonics to test (for multibit-hd analyzer)
+        #[arg(long, value_name = "FILE")]
+        mnemonic_file: Option<PathBuf>,
+
+        /// BIP39 passphrase (for multibit-hd analyzer)
+        #[arg(long, value_name = "PASSPHRASE", default_value = "")]
+        passphrase: String,
+
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -210,7 +222,9 @@ fn main() -> Result<()> {
 
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
 
-        Command::Analyze { key, fast, mask, cascade, analyzer, json } => run_analyze(&key, fast, mask, cascade, analyzer, json),
+        Command::Analyze { key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json } => {
+            run_analyze(&key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json)
+        }
     }
 }
 
@@ -322,6 +336,9 @@ fn run_analyze(
     mask_bits: Option<u8>,
     cascade_input: Option<String>,
     analyzer_types: Option<Vec<AnalyzerType>>,
+    mnemonic: Option<String>,
+    mnemonic_file: Option<PathBuf>,
+    passphrase: String,
     json_output: bool,
 ) -> Result<()> {
     use indicatif::ProgressBar;
@@ -348,7 +365,16 @@ fn run_analyze(
     let config = AnalysisConfig { mask_bits, cascade_targets };
 
     let analyzer_types = match analyzer_types {
-        Some(types) => types,
+        Some(mut types) => {
+            for t in &mut types {
+                if let AnalyzerType::MultibitHd { mnemonic: ref mut m, mnemonic_file: ref mut f, passphrase: ref mut p } = t {
+                    *m = mnemonic.clone();
+                    *f = mnemonic_file.clone();
+                    *p = passphrase.clone();
+                }
+            }
+            types
+        }
         None if fast => AnalyzerType::fast(),
         None => AnalyzerType::all(),
     };

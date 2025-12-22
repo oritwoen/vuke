@@ -6,6 +6,7 @@
 pub mod analyze;
 pub mod lcg;
 pub mod mt64;
+pub mod multibit;
 pub mod source;
 pub mod transform;
 pub mod xorshift;

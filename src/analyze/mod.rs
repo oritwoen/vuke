@@ -6,6 +6,7 @@
 mod key_parser;
 mod milksad;
 mod mt64;
+mod multibit;
 mod direct;
 mod heuristic;
 mod lcg;
@@ -15,6 +16,7 @@ mod output;
 pub use key_parser::{parse_private_key, parse_cascade, ParseError};
 pub use milksad::MilksadAnalyzer;
 pub use mt64::Mt64Analyzer;
+pub use multibit::MultibitAnalyzer;
 pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
 pub use lcg::LcgAnalyzer;
@@ -109,6 +111,11 @@ pub trait Analyzer: Send + Sync {
 pub enum AnalyzerType {
     Milksad,
     Mt64,
+    MultibitHd {
+        mnemonic: Option<String>,
+        mnemonic_file: Option<std::path::PathBuf>,
+        passphrase: String,
+    },
     Direct,
     Heuristic,
     Lcg {
@@ -126,6 +133,16 @@ impl AnalyzerType {
         match self {
             AnalyzerType::Milksad => Box::new(MilksadAnalyzer),
             AnalyzerType::Mt64 => Box::new(Mt64Analyzer),
+            AnalyzerType::MultibitHd { mnemonic, mnemonic_file, passphrase } => {
+                let mut analyzer = MultibitAnalyzer::new().with_passphrase(passphrase.clone());
+                if let Some(m) = mnemonic {
+                    analyzer = analyzer.with_mnemonic(m.clone());
+                }
+                if let Some(f) = mnemonic_file {
+                    analyzer = analyzer.with_mnemonic_file(f.clone());
+                }
+                Box::new(analyzer)
+            }
             AnalyzerType::Direct => Box::new(DirectAnalyzer),
             AnalyzerType::Heuristic => Box::new(HeuristicAnalyzer),
             AnalyzerType::Lcg { variant, endian } => {
@@ -171,6 +188,11 @@ impl AnalyzerType {
         match s.as_str() {
             "milksad" => Ok(AnalyzerType::Milksad),
             "mt64" => Ok(AnalyzerType::Mt64),
+            "multibit-hd" | "multibit" => Ok(AnalyzerType::MultibitHd {
+                mnemonic: None,
+                mnemonic_file: None,
+                passphrase: String::new(),
+            }),
             "direct" => Ok(AnalyzerType::Direct),
             "heuristic" => Ok(AnalyzerType::Heuristic),
             _ if s == "lcg" || s.starts_with("lcg:") => {
@@ -186,7 +208,7 @@ impl AnalyzerType {
                     variant: config.variant,
                 })
             }
-            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, direct, heuristic, lcg[:variant][:endian], xorshift[:variant]", s)),
+            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, multibit-hd, direct, heuristic, lcg[:variant][:endian], xorshift[:variant]", s)),
         }
     }
 }
