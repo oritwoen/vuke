@@ -31,11 +31,19 @@ num-bigint = "0.4"
 
 [dev-dependencies]
 tempfile = "3.10"
-criterion = "0.5"
+criterion = { package = "codspeed-criterion-compat", version = "4.1" }
 
 [[bin]]
 name = "vuke"
 path = "src/main.rs"
+
+[[bench]]
+name = "transforms"
+harness = false
+
+[[bench]]
+name = "derivation"
+harness = false
 
 [profile.release]
 opt-level = 3
