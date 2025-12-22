@@ -76,6 +76,7 @@ impl TransformType {
     /// Formats:
     /// - "direct", "sha256", "double_sha256", "md5", "milksad", "armory" - simple transforms
     /// - "lcg" - all LCG variants, big-endian
+    /// - "lcg::le" - all LCG variants, little-endian
     /// - "lcg:glibc" - specific variant, big-endian
     /// - "lcg:glibc:le" - specific variant, little-endian
     pub fn from_str(s: &str) -> Result<Self, String> {

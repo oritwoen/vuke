@@ -137,6 +137,10 @@ impl LcgAnalyzer {
         mask_bits: u8,
         progress: Option<&ProgressBar>,
     ) -> Option<AnalysisResult> {
+        if mask_bits == 0 {
+            return None;
+        }
+
         let target_u64 = u64::from_be_bytes(target[24..32].try_into().unwrap());
 
         let mask: u64 = if mask_bits >= 64 { u64::MAX } else { (1u64 << mask_bits) - 1 };
@@ -377,7 +381,7 @@ mod tests {
         let mut target = [0u8; 32];
         target[24..32].copy_from_slice(&masked_value.to_be_bytes());
 
-        let config = AnalysisConfig { mask_bits: Some(mask_bits) };
+        let config = AnalysisConfig { mask_bits: Some(mask_bits), ..Default::default() };
         let analyzer = LcgAnalyzer::with_variant(GLIBC);
         let result = analyzer.analyze(&target, &config, None);
 

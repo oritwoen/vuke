@@ -89,7 +89,7 @@ vuke generate --transform=milksad range --start 1 --end 1000000
 ### Test LCG-based keys
 
 ```bash
-# Generate keys using glibc rand() (default little-endian)
+# Generate keys using glibc rand() (default big-endian)
 vuke generate --transform=lcg:glibc range --start 1 --end 1000000
 
 # Use MINSTD variant with big-endian byte order
