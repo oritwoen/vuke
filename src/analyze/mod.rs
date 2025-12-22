@@ -5,6 +5,7 @@
 
 mod key_parser;
 mod milksad;
+mod mt64;
 mod direct;
 mod heuristic;
 mod lcg;
@@ -12,6 +13,7 @@ mod output;
 
 pub use key_parser::{parse_private_key, parse_cascade, ParseError};
 pub use milksad::MilksadAnalyzer;
+pub use mt64::Mt64Analyzer;
 pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
 pub use lcg::LcgAnalyzer;
@@ -104,6 +106,7 @@ pub trait Analyzer: Send + Sync {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnalyzerType {
     Milksad,
+    Mt64,
     Direct,
     Heuristic,
     Lcg {
@@ -117,6 +120,7 @@ impl AnalyzerType {
     pub fn create(&self) -> Box<dyn Analyzer> {
         match self {
             AnalyzerType::Milksad => Box::new(MilksadAnalyzer),
+            AnalyzerType::Mt64 => Box::new(Mt64Analyzer),
             AnalyzerType::Direct => Box::new(DirectAnalyzer),
             AnalyzerType::Heuristic => Box::new(HeuristicAnalyzer),
             AnalyzerType::Lcg { variant, endian } => {
@@ -133,6 +137,7 @@ impl AnalyzerType {
     pub fn all() -> Vec<AnalyzerType> {
         vec![
             AnalyzerType::Milksad,
+            AnalyzerType::Mt64,
             AnalyzerType::Lcg { variant: None, endian: crate::lcg::LcgEndian::Big },
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
@@ -152,6 +157,7 @@ impl AnalyzerType {
         
         match s.as_str() {
             "milksad" => Ok(AnalyzerType::Milksad),
+            "mt64" => Ok(AnalyzerType::Mt64),
             "direct" => Ok(AnalyzerType::Direct),
             "heuristic" => Ok(AnalyzerType::Heuristic),
             _ if s == "lcg" || s.starts_with("lcg:") => {
@@ -161,7 +167,7 @@ impl AnalyzerType {
                     endian: config.endian,
                 })
             }
-            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, direct, heuristic, lcg[:variant][:endian]", s)),
+            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, direct, heuristic, lcg[:variant][:endian]", s)),
         }
     }
 }

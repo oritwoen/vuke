@@ -244,6 +244,21 @@ Probability analysis:
 - P5 + P10: 1/16 × 1/512 = 1/8192
 - P5 + P10 + P15: virtually impossible false positive
 
+### MT19937-64 analyzer (64-bit seeds)
+
+For testing 64-bit seed hypotheses, the `mt64` analyzer **requires** cascade filter
+(64-bit seed space is not exhaustively searchable):
+
+```bash
+# MT19937-64 cascade search - REQUIRES cascade filter
+vuke analyze 0x15 --analyzer mt64 --cascade "5:0x15,10:0x202,20:0xd2c55,30:0x3d94cd64"
+```
+
+Progress shows search rate and cascade filter hits:
+```
+⠋ Searched: 1200000 seeds | Rate: 850K/s | Elapsed: 1.4s | Cascade hits: 73
+```
+
 ## Supported Transforms
 
 | Transform | Description | Use Case |
@@ -253,6 +268,7 @@ Probability analysis:
 | `double_sha256` | SHA256(SHA256(input)) | Bitcoin-style hashing |
 | `md5` | MD5(input) duplicated to 32 bytes | Legacy weak hashing |
 | `milksad` | MT19937 PRNG with 32-bit seed | CVE-2023-39910 (libbitcoin) |
+| `mt64` | MT19937-64 PRNG with 64-bit seed | 64-bit seed hypothesis testing |
 | `armory` | Armory HD derivation chain | Pre-BIP32 wallets |
 | `lcg[:variant][:endian]` | LCG PRNG with 32-bit seed | Legacy C stdlib rand() |
 
@@ -263,6 +279,7 @@ Probability analysis:
 | `milksad` | Brute-force 2^32 seeds | Check if key is Milksad victim |
 | `milksad --mask N` | Brute-force with N-bit masking | BTC1000-style puzzle analysis |
 | `milksad --cascade` | Multi-target sequential verification | Reduce false positives in puzzle research |
+| `mt64 --cascade` | Brute-force 2^64 with cascade filter | BTC1000 64-bit PRNG hypothesis |
 | `direct` | Pattern detection | Detect small seeds, ASCII strings |
 | `heuristic` | Statistical analysis | Entropy, hamming weight anomalies |
 | `lcg[:variant][:endian]` | Brute-force 2^31-2^32 seeds | Detect glibc/minstd/msvc/borland rand() |

@@ -8,6 +8,7 @@ mod sha256;
 mod double_sha256;
 mod md5;
 mod milksad;
+mod mt64;
 mod armory;
 mod lcg;
 
@@ -17,6 +18,7 @@ pub use sha256::Sha256Transform;
 pub use double_sha256::DoubleSha256Transform;
 pub use md5::Md5Transform;
 pub use milksad::MilksadTransform;
+pub use mt64::Mt64Transform;
 pub use armory::ArmoryTransform;
 pub use lcg::LcgTransform;
 
@@ -40,6 +42,7 @@ pub enum TransformType {
     DoubleSha256,
     Md5,
     Milksad,
+    Mt64,
     Armory,
     Lcg {
         variant: Option<crate::lcg::LcgVariant>,
@@ -56,6 +59,7 @@ impl TransformType {
             TransformType::DoubleSha256 => Box::new(DoubleSha256Transform),
             TransformType::Md5 => Box::new(Md5Transform),
             TransformType::Milksad => Box::new(MilksadTransform),
+            TransformType::Mt64 => Box::new(Mt64Transform),
             TransformType::Armory => Box::new(ArmoryTransform::new()),
             TransformType::Lcg { variant, endian } => {
                 let transform = match variant {
@@ -76,6 +80,7 @@ impl TransformType {
             "double_sha256" => Ok(TransformType::DoubleSha256),
             "md5" => Ok(TransformType::Md5),
             "milksad" => Ok(TransformType::Milksad),
+            "mt64" => Ok(TransformType::Mt64),
             "armory" => Ok(TransformType::Armory),
             _ if s_lower == "lcg" || s_lower.starts_with("lcg:") => {
                 let config = crate::lcg::LcgConfig::parse(&s_lower)?;
@@ -85,7 +90,7 @@ impl TransformType {
                 })
             }
             _ => Err(format!(
-                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, armory, lcg[:variant][:endian]",
+                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, lcg[:variant][:endian]",
                 s
             )),
         }
