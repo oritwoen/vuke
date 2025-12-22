@@ -478,4 +478,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Armory documentation](https://btcarmory.com/) - Legacy HD wallet
 - [Linear Congruential Generator](https://en.wikipedia.org/wiki/Linear_congruential_generator) - Wikipedia
 - [Xorshift PRNGs](https://en.wikipedia.org/wiki/Xorshift) - Wikipedia
-- [Electrum deterministic derivation](https://electrum.readthedocs.io/en/latest/seedphrase.html) - Electrum documentation
+- [Electrum 1.x key derivation](https://github.com/spesmilo/electrum/blob/b9196260cfd515363a026c3bfc7bc7aa757965a0/lib/bitcoin.py) - Pre-BIP39 source code

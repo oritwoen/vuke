@@ -148,18 +148,23 @@ impl ElectrumDeriver {
 /// # Arguments
 /// * `seed` - Seed bytes (typically ASCII-encoded hex string)
 pub fn stretch_key(seed: &[u8]) -> [u8; 32] {
-    let mut x = seed.to_vec();
+    let mut x = [0u8; 32];
 
-    for _ in 0..100_000 {
+    // First iteration: x = SHA256(seed + seed)
+    let mut hasher = Sha256::new();
+    hasher.update(seed);
+    hasher.update(seed);
+    x.copy_from_slice(&hasher.finalize());
+
+    // Remaining iterations: x = SHA256(x + seed)
+    for _ in 1..100_000 {
         let mut hasher = Sha256::new();
         hasher.update(&x);
         hasher.update(seed);
-        x = hasher.finalize().to_vec();
+        x.copy_from_slice(&hasher.finalize());
     }
 
-    let mut result = [0u8; 32];
-    result.copy_from_slice(&x);
-    result
+    x
 }
 
 /// Calculate the sequence number for child key derivation.
@@ -190,11 +195,17 @@ fn double_sha256(data: &[u8]) -> [u8; 32] {
 }
 
 /// Truncate a seed for display (show first 8 and last 8 chars).
+///
+/// Uses character-based slicing to handle UTF-8 safely.
 pub fn truncate_seed(seed: &str) -> String {
-    if seed.len() <= 20 {
+    let char_count = seed.chars().count();
+
+    if char_count <= 20 {
         seed.to_string()
     } else {
-        format!("{}...{}", &seed[..8], &seed[seed.len()-8..])
+        let first: String = seed.chars().take(8).collect();
+        let last: String = seed.chars().rev().take(8).collect::<String>().chars().rev().collect();
+        format!("{}...{}", first, last)
     }
 }
 
