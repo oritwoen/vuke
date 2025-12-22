@@ -7,12 +7,14 @@ mod key_parser;
 mod milksad;
 mod direct;
 mod heuristic;
+mod lcg;
 mod output;
 
 pub use key_parser::{parse_private_key, parse_cascade, ParseError};
 pub use milksad::MilksadAnalyzer;
 pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
+pub use lcg::LcgAnalyzer;
 pub use output::{format_results, format_results_json};
 
 use indicatif::ProgressBar;
@@ -99,27 +101,39 @@ pub trait Analyzer: Send + Sync {
 }
 
 /// Available analyzer types for CLI selection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnalyzerType {
     Milksad,
     Direct,
     Heuristic,
+    Lcg {
+        variant: Option<crate::lcg::LcgVariant>,
+        endian: crate::lcg::LcgEndian,
+    },
 }
 
 impl AnalyzerType {
     /// Create analyzer instance
-    pub fn create(self) -> Box<dyn Analyzer> {
+    pub fn create(&self) -> Box<dyn Analyzer> {
         match self {
             AnalyzerType::Milksad => Box::new(MilksadAnalyzer),
             AnalyzerType::Direct => Box::new(DirectAnalyzer),
             AnalyzerType::Heuristic => Box::new(HeuristicAnalyzer),
+            AnalyzerType::Lcg { variant, endian } => {
+                let analyzer = match variant {
+                    Some(v) => LcgAnalyzer::with_variant(*v),
+                    None => LcgAnalyzer::new(),
+                };
+                Box::new(analyzer.with_endian(*endian))
+            }
         }
     }
 
-    /// All available analyzer types
+    /// All available analyzer types (default configurations)
     pub fn all() -> Vec<AnalyzerType> {
         vec![
             AnalyzerType::Milksad,
+            AnalyzerType::Lcg { variant: None, endian: crate::lcg::LcgEndian::Big },
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
         ]
@@ -131,6 +145,24 @@ impl AnalyzerType {
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
         ]
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        let s = s.to_lowercase();
+        
+        match s.as_str() {
+            "milksad" => Ok(AnalyzerType::Milksad),
+            "direct" => Ok(AnalyzerType::Direct),
+            "heuristic" => Ok(AnalyzerType::Heuristic),
+            _ if s == "lcg" || s.starts_with("lcg:") => {
+                let config = crate::lcg::LcgConfig::parse(&s)?;
+                Ok(AnalyzerType::Lcg { 
+                    variant: config.variant, 
+                    endian: config.endian,
+                })
+            }
+            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, direct, heuristic, lcg[:variant][:endian]", s)),
+        }
     }
 }
 

@@ -4,6 +4,7 @@
 //! key generation, including weak PRNGs, predictable seeds, and insecure derivation methods.
 
 pub mod analyze;
+pub mod lcg;
 pub mod source;
 pub mod transform;
 pub mod derive;

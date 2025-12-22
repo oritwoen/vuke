@@ -14,6 +14,14 @@ use vuke::output::{ConsoleOutput, Output};
 use vuke::source::{RangeSource, Source, StdinSource, TimestampSource, WordlistSource};
 use vuke::transform::{Transform, TransformType};
 
+fn parse_analyzer_type(s: &str) -> Result<AnalyzerType, String> {
+    AnalyzerType::from_str(s)
+}
+
+fn parse_transform_type(s: &str) -> Result<TransformType, String> {
+    TransformType::from_str(s)
+}
+
 #[derive(Parser)]
 #[command(name = "vuke")]
 #[command(about = "Research tool for studying vulnerable Bitcoin key generation practices")]
@@ -30,8 +38,8 @@ enum Command {
         #[command(subcommand)]
         source: SourceCommand,
 
-        /// Transform(s) to apply
-        #[arg(long, value_enum, num_args = 1.., default_value = "sha256")]
+        /// Transform(s) to apply (e.g., sha256, lcg, lcg:glibc, lcg:glibc:le)
+        #[arg(long, value_parser = parse_transform_type, num_args = 1.., default_value = "sha256")]
         transform: Vec<TransformType>,
 
         /// Network (bitcoin, testnet, signet, regtest)
@@ -52,8 +60,8 @@ enum Command {
         #[command(subcommand)]
         source: SourceCommand,
 
-        /// Transform(s) to apply
-        #[arg(long, value_enum, num_args = 1..)]
+        /// Transform(s) to apply (e.g., sha256, lcg, lcg:glibc, lcg:glibc:le)
+        #[arg(long, value_parser = parse_transform_type, num_args = 1..)]
         transform: Vec<TransformType>,
 
         /// Target addresses file (one per line)
@@ -74,8 +82,8 @@ enum Command {
         /// The passphrase
         passphrase: String,
 
-        /// Transform to apply
-        #[arg(long, value_enum, default_value = "sha256")]
+        /// Transform to apply (e.g., sha256, lcg:glibc)
+        #[arg(long, value_parser = parse_transform_type, default_value = "sha256")]
         transform: TransformType,
 
         /// Network (bitcoin, testnet, signet, regtest)
@@ -85,8 +93,8 @@ enum Command {
 
     /// Run benchmark
     Bench {
-        /// Transform to benchmark
-        #[arg(long, value_enum, default_value = "sha256")]
+        /// Transform to benchmark (e.g., sha256, lcg:glibc)
+        #[arg(long, value_parser = parse_transform_type, default_value = "sha256")]
         transform: TransformType,
 
         /// Output JSON for benchmark runner
@@ -111,8 +119,8 @@ enum Command {
         #[arg(long, value_name = "CASCADE")]
         cascade: Option<String>,
 
-        /// Specific analyzer(s) to run
-        #[arg(long, value_enum)]
+        /// Specific analyzer(s) to run (e.g., milksad, lcg, lcg:glibc, lcg:glibc:le)
+        #[arg(long, value_parser = parse_analyzer_type)]
         analyzer: Option<Vec<AnalyzerType>>,
 
         /// Output as JSON
@@ -252,7 +260,7 @@ fn run_single(passphrase: &str, transform_type: TransformType, network: &str) ->
 
     let net = parse_network(network);
     let deriver = KeyDeriver::with_network(net);
-    let transform = create_transform(transform_type);
+    let transform = transform_type.create();
 
     let input = Input::from_string(passphrase.to_string());
     let mut buffer = Vec::new();
@@ -305,20 +313,7 @@ fn create_source(cmd: SourceCommand) -> Result<Box<dyn Source>> {
 }
 
 fn create_transforms(types: Vec<TransformType>) -> Vec<Box<dyn Transform>> {
-    types.into_iter().map(create_transform).collect()
-}
-
-fn create_transform(t: TransformType) -> Box<dyn Transform> {
-    use vuke::transform::*;
-
-    match t {
-        TransformType::Direct => Box::new(DirectTransform),
-        TransformType::Sha256 => Box::new(Sha256Transform),
-        TransformType::DoubleSha256 => Box::new(DoubleSha256Transform),
-        TransformType::Md5 => Box::new(Md5Transform),
-        TransformType::Milksad => Box::new(MilksadTransform),
-        TransformType::Armory => Box::new(ArmoryTransform::new()),
-    }
+    types.into_iter().map(|t| t.create()).collect()
 }
 
 fn run_analyze(
