@@ -4,6 +4,7 @@
 //! key generation, including weak PRNGs, predictable seeds, and insecure derivation methods.
 
 pub mod analyze;
+pub mod electrum;
 pub mod lcg;
 pub mod mt64;
 pub mod multibit;

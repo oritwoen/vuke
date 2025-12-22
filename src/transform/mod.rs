@@ -13,6 +13,7 @@ mod armory;
 mod lcg;
 mod xorshift;
 mod multibit;
+mod electrum;
 
 pub use input::Input;
 pub use direct::DirectTransform;
@@ -25,6 +26,7 @@ pub use armory::ArmoryTransform;
 pub use lcg::LcgTransform;
 pub use xorshift::XorshiftTransform;
 pub use multibit::MultibitTransform;
+pub use electrum::ElectrumTransform;
 
 /// 32-byte private key
 pub type Key = [u8; 32];
@@ -49,6 +51,7 @@ pub enum TransformType {
     Mt64,
     Armory,
     Multibit,
+    Electrum { for_change: bool },
     Lcg {
         variant: Option<crate::lcg::LcgVariant>,
         endian: crate::lcg::LcgEndian,
@@ -70,6 +73,14 @@ impl TransformType {
             TransformType::Mt64 => Box::new(Mt64Transform),
             TransformType::Armory => Box::new(ArmoryTransform::new()),
             TransformType::Multibit => Box::new(MultibitTransform::new()),
+            TransformType::Electrum { for_change } => {
+                let transform = if *for_change {
+                    ElectrumTransform::new().with_change()
+                } else {
+                    ElectrumTransform::new()
+                };
+                Box::new(transform)
+            }
             TransformType::Lcg { variant, endian } => {
                 let transform = match variant {
                     Some(v) => LcgTransform::with_variant(*v),
@@ -99,6 +110,8 @@ impl TransformType {
             "mt64" => Ok(TransformType::Mt64),
             "armory" => Ok(TransformType::Armory),
             "multibit" => Ok(TransformType::Multibit),
+            "electrum" => Ok(TransformType::Electrum { for_change: false }),
+            "electrum:change" => Ok(TransformType::Electrum { for_change: true }),
             _ if s_lower == "lcg" || s_lower.starts_with("lcg:") => {
                 let config = crate::lcg::LcgConfig::parse(&s_lower)?;
                 Ok(TransformType::Lcg { 
@@ -113,7 +126,7 @@ impl TransformType {
                 })
             }
             _ => Err(format!(
-                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, multibit, lcg[:variant][:endian], xorshift[:variant]",
+                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, multibit, electrum[:change], lcg[:variant][:endian], xorshift[:variant]",
                 s
             )),
         }
