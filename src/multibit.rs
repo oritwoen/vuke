@@ -349,6 +349,16 @@ fn scalar_add(a: &[u8], b: &[u8; 32]) -> Result<[u8; 32], MultibitError> {
     Ok(result.secret_bytes())
 }
 
+/// Truncate a mnemonic for display (show first 2 and last 2 words).
+pub fn truncate_mnemonic(mnemonic: &str) -> String {
+    let words: Vec<&str> = mnemonic.split_whitespace().collect();
+    if words.len() <= 4 {
+        mnemonic.to_string()
+    } else {
+        format!("{}...{}", words[..2].join(" "), words[words.len()-2..].join(" "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

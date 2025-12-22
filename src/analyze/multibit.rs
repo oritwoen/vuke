@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use indicatif::ProgressBar;
 
-use crate::multibit::MultibitBugDeriver;
+use crate::multibit::{MultibitBugDeriver, truncate_mnemonic};
 use super::{Analyzer, AnalysisConfig, AnalysisResult, AnalysisStatus};
 
 const DEFAULT_DERIVATION_DEPTH: u32 = 20;
@@ -181,15 +181,6 @@ impl Analyzer for MultibitAnalyzer {
 
     fn is_brute_force(&self) -> bool {
         self.mnemonic_file.is_some()
-    }
-}
-
-fn truncate_mnemonic(mnemonic: &str) -> String {
-    let words: Vec<&str> = mnemonic.split_whitespace().collect();
-    if words.len() <= 4 {
-        mnemonic.to_string()
-    } else {
-        format!("{}...{}", words[..2].join(" "), words[words.len()-2..].join(" "))
     }
 }
 

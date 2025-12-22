@@ -1,6 +1,6 @@
 //! MultiBit HD transform - reproduces the seed-as-entropy bug.
 
-use crate::multibit::MultibitBugDeriver;
+use crate::multibit::{MultibitBugDeriver, truncate_mnemonic};
 use super::{Input, Key, Transform};
 
 /// Transform that reproduces MultiBit HD Beta 7 seed-as-entropy bug.
@@ -62,18 +62,10 @@ impl Transform for MultibitTransform {
     }
 }
 
-fn truncate_mnemonic(mnemonic: &str) -> String {
-    let words: Vec<&str> = mnemonic.split_whitespace().collect();
-    if words.len() <= 4 {
-        mnemonic.to_string()
-    } else {
-        format!("{}...{}", words[..2].join(" "), words[words.len()-2..].join(" "))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::multibit::truncate_mnemonic;
 
     #[test]
     fn test_multibit_transform_basic() {
