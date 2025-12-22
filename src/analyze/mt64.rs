@@ -89,7 +89,8 @@ impl Mt64Analyzer {
             let start = chunk_idx.saturating_mul(chunk_size);
             let end = start.saturating_add(chunk_size - 1);
 
-            if chunk_idx > 0 && start == 0 {
+            // Detect saturation (overflow) - saturating_mul returns u64::MAX on overflow
+            if start == u64::MAX {
                 break;
             }
 
