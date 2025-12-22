@@ -19,6 +19,7 @@ Research tool for analyzing and reproducing vulnerable Bitcoin key generation.
   - MD5 (legacy weak hashing)
   - Milksad (MT19937 PRNG - CVE-2023-39910)
   - MultiBit HD (seed-as-entropy bug)
+  - Electrum pre-BIP39 (2011-2014 deterministic derivation)
   - Armory (legacy HD derivation)
 - **Key origin analysis** - reverse detection of vulnerable generation methods
 - **Parallel processing** via Rayon
@@ -38,6 +39,7 @@ Historical vulnerabilities this tool can reproduce:
 | Weak PRNGs | 2013-2023 | Predictable seeds (timestamps, PIDs) |
 | [Milksad](https://milksad.info/) | 2023 | libbitcoin `bx` used MT19937 with 32-bit seeds |
 | [MultiBit HD](https://github.com/Multibit-Legacy/multibit-hd/issues/445) | 2014-2016 | 64-byte BIP39 seed used as entropy |
+| Electrum pre-BIP39 | 2011-2014 | Custom deterministic derivation with weak stretching |
 | Armory HD | 2012-2016 | Pre-BIP32 deterministic derivation |
 | LCG PRNGs | 1990s-2010s | glibc rand(), MINSTD, MSVC - only 31-32 bit state |
 | Xorshift PRNGs | 2003-present | V8/SpiderMonkey Math.random() - 64-128 bit state |
@@ -328,6 +330,28 @@ P2PKH (compressed):   1LQ8XnNKqC7Vu7atH5k4X8qVCc9ug2q7WE
 This matches the buggy address from [MultiBit HD issue #445](https://github.com/Multibit-Legacy/multibit-hd/issues/445).
 The correct BIP39 address would be `12QxtuyEM8KBG3ngNRe2CZE28hFw3b1KMJ`.
 
+### Electrum pre-BIP39 keys (2011-2014)
+
+Electrum wallets before BIP39 adoption used a custom deterministic derivation scheme:
+- 128-bit hex seed stretched via 100,000 SHA256 iterations
+- Child keys derived as `(master + sequence) mod n`
+- Uncompressed public keys for addresses
+
+Generate keys from an old Electrum seed:
+
+```bash
+# Generate receiving chain addresses (first 20 keys)
+vuke single "acb740e454c3134901d7c8f16497cc1c" --transform electrum
+
+# Generate change chain addresses
+vuke single "acb740e454c3134901d7c8f16497cc1c" --transform electrum:change
+```
+
+Output (receiving address 0):
+```
+P2PKH (uncompressed): 1FJEEB8ihPMbzs2SkLmr37dHyRFzakqUmo
+```
+
 ## Supported Transforms
 
 | Transform | Description | Use Case |
@@ -340,6 +364,8 @@ The correct BIP39 address would be `12QxtuyEM8KBG3ngNRe2CZE28hFw3b1KMJ`.
 | `mt64` | MT19937-64 PRNG with 64-bit seed | 64-bit seed hypothesis testing |
 | `multibit` | MultiBit HD seed-as-entropy bug | 2014-2016 MultiBit HD wallets |
 | `armory` | Armory HD derivation chain | Pre-BIP32 wallets |
+| `electrum` | Electrum pre-BIP39 derivation | 2011-2014 Electrum wallets |
+| `electrum:change` | Electrum change chain | 2011-2014 Electrum change addresses |
 | `lcg[:variant][:endian]` | LCG PRNG with 32-bit seed | Legacy C stdlib rand() |
 | `xorshift[:variant]` | Xorshift PRNG with 64-bit seed | V8/SpiderMonkey Math.random() |
 
@@ -395,6 +421,7 @@ src/
 ├── xorshift.rs      # Xorshift PRNG shared logic
 ├── mt64.rs          # MT19937-64 PRNG shared logic
 ├── multibit.rs      # MultiBit HD bug logic (PBKDF2, BIP32)
+├── electrum.rs      # Electrum pre-BIP39 deterministic derivation
 ├── analyze/
 │   ├── mod.rs       # Analyzer trait and types
 │   ├── key_parser.rs # Parse hex/WIF/decimal keys
@@ -422,6 +449,7 @@ src/
 │   ├── milksad.rs   # MT19937 PRNG (CVE-2023-39910)
 │   ├── mt64.rs      # MT19937-64 PRNG transform
 │   ├── multibit.rs  # MultiBit HD seed-as-entropy bug
+│   ├── electrum.rs  # Electrum pre-BIP39 deterministic derivation
 │   ├── lcg.rs       # LCG PRNG transform
 │   ├── xorshift.rs  # Xorshift PRNG transform
 │   └── armory.rs    # Armory HD derivation
@@ -450,3 +478,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [Armory documentation](https://btcarmory.com/) - Legacy HD wallet
 - [Linear Congruential Generator](https://en.wikipedia.org/wiki/Linear_congruential_generator) - Wikipedia
 - [Xorshift PRNGs](https://en.wikipedia.org/wiki/Xorshift) - Wikipedia
+- [Electrum 1.x key derivation](https://github.com/spesmilo/electrum/blob/b9196260cfd515363a026c3bfc7bc7aa757965a0/lib/bitcoin.py) - Pre-BIP39 source code
