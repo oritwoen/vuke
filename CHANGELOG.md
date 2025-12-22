@@ -1,8 +1,17 @@
+## [0.5.0] - 2025-12-22
+
+### 🚀 Features
+
+- *(analyze)* Add LCG analyzer (#18)
 ## [0.4.0] - 2025-12-21
 
 ### 🚀 Features
 
 - *(analyze)* Add cascading filter (#17)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.4.0
 ## [0.3.0] - 2025-12-21
 
 ### 🚀 Features
