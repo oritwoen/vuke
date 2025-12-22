@@ -74,6 +74,10 @@ pub const ALL_VARIANTS: [XorshiftVariant; 4] = [
     XorshiftVariant::Xoroshiro128StarStar,
 ];
 
+pub trait XorshiftRng {
+    fn fill_bytes(&mut self, buf: &mut [u8]);
+}
+
 /// Xorshift64 state.
 #[derive(Debug, Clone)]
 pub struct Xorshift64 {
@@ -111,6 +115,12 @@ impl Xorshift64 {
             buf[i..i + to_copy].copy_from_slice(&bytes[..to_copy]);
             i += to_copy;
         }
+    }
+}
+
+impl XorshiftRng for Xorshift64 {
+    fn fill_bytes(&mut self, buf: &mut [u8]) {
+        Xorshift64::fill_bytes(self, buf)
     }
 }
 
@@ -161,6 +171,12 @@ impl Xorshift128 {
     }
 }
 
+impl XorshiftRng for Xorshift128 {
+    fn fill_bytes(&mut self, buf: &mut [u8]) {
+        Xorshift128::fill_bytes(self, buf)
+    }
+}
+
 /// Xorshift128+ state.
 #[derive(Debug, Clone)]
 pub struct Xorshift128Plus {
@@ -207,6 +223,12 @@ impl Xorshift128Plus {
     }
 }
 
+impl XorshiftRng for Xorshift128Plus {
+    fn fill_bytes(&mut self, buf: &mut [u8]) {
+        Xorshift128Plus::fill_bytes(self, buf)
+    }
+}
+
 /// Xoroshiro128** state.
 #[derive(Debug, Clone)]
 pub struct Xoroshiro128StarStar {
@@ -250,6 +272,12 @@ impl Xoroshiro128StarStar {
             buf[i..i + to_copy].copy_from_slice(&bytes[..to_copy]);
             i += to_copy;
         }
+    }
+}
+
+impl XorshiftRng for Xoroshiro128StarStar {
+    fn fill_bytes(&mut self, buf: &mut [u8]) {
+        Xoroshiro128StarStar::fill_bytes(self, buf)
     }
 }
 

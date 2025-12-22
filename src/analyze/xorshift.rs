@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
-use crate::xorshift::{XorshiftVariant, ALL_VARIANTS};
+use crate::xorshift::{XorshiftRng, XorshiftVariant, ALL_VARIANTS};
 use super::{AnalysisConfig, AnalysisResult, AnalysisStatus, Analyzer};
 
 pub struct XorshiftAnalyzer {
@@ -81,6 +81,7 @@ impl XorshiftAnalyzer {
 
             if let Some(pb) = progress {
                 pb.set_position(searched.load(Ordering::Relaxed));
+                pb.set_message(format!("xorshift:{} | Cascade hits: {}", variant.name(), cascade_hits.load(Ordering::Relaxed)));
             }
 
             if result {
@@ -95,13 +96,14 @@ impl XorshiftAnalyzer {
         }
 
         let total_searched = searched.load(Ordering::Relaxed);
+        let total_cascade_hits = cascade_hits.load(Ordering::Relaxed);
         let elapsed = start_time.elapsed();
 
         if found.load(Ordering::Acquire) {
             let seed = found_seed.load(Ordering::Acquire);
             let keys = found_keys.lock().unwrap().clone();
 
-            let details = format_cascade_result(seed, variant, targets, &keys, total_searched, elapsed);
+            let details = format_cascade_result(seed, variant, targets, &keys, total_searched, total_cascade_hits, elapsed);
 
             Some(AnalysisResult {
                 analyzer: "xorshift",
@@ -131,80 +133,20 @@ impl XorshiftAnalyzer {
                     return false;
                 }
 
-                let mut keys: Vec<[u8; 32]> = Vec::with_capacity(targets.len());
-                let mut all_matched = true;
-                let mut first_filter_passed = false;
-
-                match variant {
+                let (all_matched, first_filter_passed, keys) = match variant {
                     XorshiftVariant::Xorshift64 => {
-                        let mut rng = crate::xorshift::Xorshift64::new(seed);
-                        for (i, (bits, target)) in targets.iter().enumerate() {
-                            let mut key = [0u8; 32];
-                            rng.fill_bytes(&mut key);
-
-                            if !check_mask(&key, *bits, *target) {
-                                all_matched = false;
-                                break;
-                            }
-
-                            if i == 0 {
-                                first_filter_passed = true;
-                            }
-                            keys.push(key);
-                        }
+                        check_seed_with_rng(crate::xorshift::Xorshift64::new(seed), targets)
                     }
                     XorshiftVariant::Xorshift128 => {
-                        let mut rng = crate::xorshift::Xorshift128::new(seed);
-                        for (i, (bits, target)) in targets.iter().enumerate() {
-                            let mut key = [0u8; 32];
-                            rng.fill_bytes(&mut key);
-
-                            if !check_mask(&key, *bits, *target) {
-                                all_matched = false;
-                                break;
-                            }
-
-                            if i == 0 {
-                                first_filter_passed = true;
-                            }
-                            keys.push(key);
-                        }
+                        check_seed_with_rng(crate::xorshift::Xorshift128::new(seed), targets)
                     }
                     XorshiftVariant::Xorshift128Plus => {
-                        let mut rng = crate::xorshift::Xorshift128Plus::new(seed);
-                        for (i, (bits, target)) in targets.iter().enumerate() {
-                            let mut key = [0u8; 32];
-                            rng.fill_bytes(&mut key);
-
-                            if !check_mask(&key, *bits, *target) {
-                                all_matched = false;
-                                break;
-                            }
-
-                            if i == 0 {
-                                first_filter_passed = true;
-                            }
-                            keys.push(key);
-                        }
+                        check_seed_with_rng(crate::xorshift::Xorshift128Plus::new(seed), targets)
                     }
                     XorshiftVariant::Xoroshiro128StarStar => {
-                        let mut rng = crate::xorshift::Xoroshiro128StarStar::new(seed);
-                        for (i, (bits, target)) in targets.iter().enumerate() {
-                            let mut key = [0u8; 32];
-                            rng.fill_bytes(&mut key);
-
-                            if !check_mask(&key, *bits, *target) {
-                                all_matched = false;
-                                break;
-                            }
-
-                            if i == 0 {
-                                first_filter_passed = true;
-                            }
-                            keys.push(key);
-                        }
+                        check_seed_with_rng(crate::xorshift::Xoroshiro128StarStar::new(seed), targets)
                     }
-                }
+                };
 
                 if first_filter_passed && !all_matched {
                     cascade_hits.fetch_add(1, Ordering::Relaxed);
@@ -226,6 +168,9 @@ impl XorshiftAnalyzer {
 }
 
 fn check_mask(key: &[u8; 32], bits: u8, target: u64) -> bool {
+    if bits == 0 {
+        return false;
+    }
     let key_u64 = u64::from_be_bytes(key[24..32].try_into().unwrap());
     let mask: u64 = if bits >= 64 {
         u64::MAX
@@ -237,17 +182,41 @@ fn check_mask(key: &[u8; 32], bits: u8, target: u64) -> bool {
     masked == target
 }
 
+fn check_seed_with_rng<R: XorshiftRng>(mut rng: R, targets: &[(u8, u64)]) -> (bool, bool, Vec<[u8; 32]>) {
+    let mut keys: Vec<[u8; 32]> = Vec::with_capacity(targets.len());
+    let mut all_matched = true;
+    let mut first_filter_passed = false;
+
+    for (i, (bits, target)) in targets.iter().enumerate() {
+        let mut key = [0u8; 32];
+        rng.fill_bytes(&mut key);
+
+        if !check_mask(&key, *bits, *target) {
+            all_matched = false;
+            break;
+        }
+
+        if i == 0 {
+            first_filter_passed = true;
+        }
+        keys.push(key);
+    }
+
+    (all_matched, first_filter_passed, keys)
+}
+
 fn format_cascade_result(
     seed: u64,
     variant: XorshiftVariant,
     targets: &[(u8, u64)],
     keys: &[[u8; 32]],
     searched: u64,
+    cascade_hits: u64,
     elapsed: std::time::Duration,
 ) -> String {
     let mut lines = vec![
         format!("variant={}, seed={} (0x{:016x})", variant.name(), seed, seed),
-        format!("searched {} seeds in {:.2}s", searched, elapsed.as_secs_f64()),
+        format!("searched {} seeds in {:.2}s, cascade_hits={}", searched, elapsed.as_secs_f64(), cascade_hits),
     ];
 
     for ((bits, target), key) in targets.iter().zip(keys.iter()) {
