@@ -17,6 +17,9 @@ pub mod output;
 pub mod benchmark;
 pub mod network;
 
+#[cfg(feature = "gpu")]
+pub mod gpu;
+
 pub use transform::Key;
 
 /// Default progress bar style for CLI operations.
