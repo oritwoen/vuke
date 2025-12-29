@@ -38,6 +38,26 @@ pub trait Transform: Send + Sync {
 
     /// Process a batch of inputs and append results to output buffer
     fn apply_batch(&self, inputs: &[Input], output: &mut Vec<(String, Key)>);
+
+    /// Whether this transform supports GPU acceleration
+    #[cfg(feature = "gpu")]
+    fn supports_gpu(&self) -> bool {
+        false
+    }
+
+    /// Process a batch of inputs using GPU acceleration
+    ///
+    /// Default implementation falls back to CPU.
+    #[cfg(feature = "gpu")]
+    fn apply_batch_gpu(
+        &self,
+        _ctx: &crate::gpu::GpuContext,
+        inputs: &[Input],
+        output: &mut Vec<(String, Key)>,
+    ) -> Result<(), crate::gpu::GpuError> {
+        self.apply_batch(inputs, output);
+        Ok(())
+    }
 }
 
 /// Available transform types

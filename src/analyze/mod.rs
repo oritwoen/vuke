@@ -91,7 +91,7 @@ pub trait Analyzer: Send + Sync {
     fn name(&self) -> &'static str;
 
     /// Analyze a key and return the result.
-    /// 
+    ///
     /// Progress bar is optional - used for long-running analyses like Milksad brute-force.
     fn analyze(&self, key: &[u8; 32], config: &AnalysisConfig, progress: Option<&ProgressBar>) -> AnalysisResult;
 
@@ -103,6 +103,26 @@ pub trait Analyzer: Send + Sync {
     /// Whether this analyzer requires brute-force (slow)
     fn is_brute_force(&self) -> bool {
         false
+    }
+
+    /// Whether this analyzer supports GPU acceleration
+    #[cfg(feature = "gpu")]
+    fn supports_gpu(&self) -> bool {
+        false
+    }
+
+    /// Analyze a key using GPU acceleration
+    ///
+    /// Default implementation falls back to CPU.
+    #[cfg(feature = "gpu")]
+    fn analyze_gpu(
+        &self,
+        _ctx: &crate::gpu::GpuContext,
+        key: &[u8; 32],
+        config: &AnalysisConfig,
+        progress: Option<&ProgressBar>,
+    ) -> Result<AnalysisResult, crate::gpu::GpuError> {
+        Ok(self.analyze(key, config, progress))
     }
 }
 

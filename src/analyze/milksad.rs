@@ -32,7 +32,7 @@ impl Analyzer for MilksadAnalyzer {
         if let Some(ref targets) = config.cascade_targets {
             return self.analyze_cascading(targets, progress);
         }
-        
+
         match config.mask_bits {
             Some(bits) => self.analyze_masked(key, bits, progress),
             None => self.analyze_exact(key, progress),
@@ -41,6 +41,27 @@ impl Analyzer for MilksadAnalyzer {
 
     fn is_brute_force(&self) -> bool {
         true
+    }
+
+    #[cfg(feature = "gpu")]
+    fn supports_gpu(&self) -> bool {
+        true
+    }
+
+    #[cfg(feature = "gpu")]
+    fn analyze_gpu(
+        &self,
+        ctx: &crate::gpu::GpuContext,
+        key: &[u8; 32],
+        config: &AnalysisConfig,
+        progress: Option<&ProgressBar>,
+    ) -> Result<AnalysisResult, crate::gpu::GpuError> {
+        // GPU acceleration only for exact match (no mask, no cascade)
+        if config.cascade_targets.is_some() || config.mask_bits.is_some() {
+            return Ok(self.analyze(key, config, progress));
+        }
+
+        self.analyze_exact_gpu(ctx, key, progress)
     }
 }
 
@@ -346,15 +367,67 @@ impl MilksadAnalyzer {
 
 fn format_cascade_result(result: &CascadeResult) -> String {
     let mut lines = vec![format!("seed={} (0x{:08x})", result.seed, result.seed)];
-    
+
     for m in &result.matches {
         lines.push(format!(
             "  P{}: target=0x{:x}, full_key={}",
             m.bits, m.target, m.full_key_hex
         ));
     }
-    
+
     lines.join("\n")
+}
+
+#[cfg(feature = "gpu")]
+impl MilksadAnalyzer {
+    /// GPU-accelerated exact match brute-force.
+    fn analyze_exact_gpu(
+        &self,
+        ctx: &crate::gpu::GpuContext,
+        key: &[u8; 32],
+        progress: Option<&ProgressBar>,
+    ) -> Result<AnalysisResult, crate::gpu::GpuError> {
+        use crate::gpu::GpuMt19937Pipeline;
+
+        let pipeline = GpuMt19937Pipeline::new(ctx)?;
+
+        let total: u64 = u32::MAX as u64 + 1;
+        if let Some(pb) = progress {
+            pb.set_length(total);
+            pb.set_message("milksad GPU brute-force");
+        }
+
+        // Batch size: 4M seeds per GPU dispatch (limited by max workgroups = 65535)
+        // With workgroup_size=64: 4M / 64 = 62500 workgroups < 65535
+        const BATCH_SIZE: u32 = 4_000_000;
+
+        let result = pipeline.search_full(key, BATCH_SIZE, |seeds_tested, found_seed| {
+            if let Some(pb) = progress {
+                pb.set_position(seeds_tested);
+            }
+
+            // Return true to continue, false to stop
+            found_seed.is_none()
+        })?;
+
+        if let Some(pb) = progress {
+            pb.finish_and_clear();
+        }
+
+        if let Some(seed) = result.found_seed {
+            Ok(AnalysisResult {
+                analyzer: self.name(),
+                status: AnalysisStatus::Confirmed,
+                details: Some(format!("seed = {} (GPU)", seed)),
+            })
+        } else {
+            Ok(AnalysisResult {
+                analyzer: self.name(),
+                status: AnalysisStatus::NotFound,
+                details: Some(format!("checked {} seeds (GPU)", result.seeds_tested)),
+            })
+        }
+    }
 }
 
 #[cfg(test)]

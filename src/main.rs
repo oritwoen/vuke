@@ -29,6 +29,11 @@ fn parse_transform_type(s: &str) -> Result<TransformType, String> {
 struct Cli {
     #[command(subcommand)]
     command: Command,
+
+    /// Disable GPU acceleration (use CPU only)
+    #[cfg(feature = "gpu")]
+    #[arg(long, global = true)]
+    no_gpu: bool,
 }
 
 #[derive(Subcommand)]
@@ -223,11 +228,17 @@ fn main() -> Result<()> {
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
 
         Command::Analyze { key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json } => {
-            run_analyze(&key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json)
+            #[cfg(feature = "gpu")]
+            let use_gpu = !cli.no_gpu;
+            #[cfg(not(feature = "gpu"))]
+            let use_gpu = false;
+
+            run_analyze(&key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json, use_gpu)
         }
     }
 }
 
+// TODO: GPU for generate/scan needs Source trait redesign (rayon par_chunks vs GPU batch model)
 fn run_generate(source_cmd: SourceCommand, transforms: Vec<TransformType>, output: &dyn Output) -> Result<()> {
     let source = create_source(source_cmd)?;
     let transforms = create_transforms(transforms);
@@ -340,6 +351,7 @@ fn run_analyze(
     mnemonic_file: Option<PathBuf>,
     passphrase: String,
     json_output: bool,
+    use_gpu: bool,
 ) -> Result<()> {
     use indicatif::ProgressBar;
     use vuke::analyze::{AnalysisConfig, parse_cascade};
@@ -384,6 +396,30 @@ fn run_analyze(
         .map(|t| t.create())
         .collect();
 
+    // Initialize GPU context if requested
+    #[cfg(feature = "gpu")]
+    let gpu_ctx = if use_gpu {
+        match vuke::gpu::GpuContext::new_sync() {
+            Ok(ctx) => {
+                if !json_output {
+                    eprintln!("GPU: {}", ctx.description());
+                }
+                Some(ctx)
+            }
+            Err(e) => {
+                if !json_output {
+                    eprintln!("GPU unavailable ({}), using CPU", e);
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    #[cfg(not(feature = "gpu"))]
+    let _ = use_gpu; // Suppress unused warning
+
     let mut results = Vec::new();
 
     for analyzer in &analyzers {
@@ -395,7 +431,29 @@ fn run_analyze(
             None
         };
 
+        // Try GPU first if available and supported
+        #[cfg(feature = "gpu")]
+        let result = if let Some(ref ctx) = gpu_ctx {
+            if analyzer.supports_gpu() {
+                match analyzer.analyze_gpu(ctx, &key, &config, progress.as_ref()) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        if !json_output {
+                            eprintln!("GPU error ({}), falling back to CPU", e);
+                        }
+                        analyzer.analyze(&key, &config, progress.as_ref())
+                    }
+                }
+            } else {
+                analyzer.analyze(&key, &config, progress.as_ref())
+            }
+        } else {
+            analyzer.analyze(&key, &config, progress.as_ref())
+        };
+
+        #[cfg(not(feature = "gpu"))]
         let result = analyzer.analyze(&key, &config, progress.as_ref());
+
         results.push(result);
     }
 
