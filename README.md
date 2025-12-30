@@ -17,6 +17,7 @@ Research tool for analyzing and reproducing vulnerable Bitcoin key generation.
   - SHA256 (classic brainwallet)
   - Double SHA256 (Bitcoin-style hashing)
   - MD5 (legacy weak hashing)
+  - SHA256 chain (iterated/indexed deterministic derivation)
   - Milksad (MT19937 PRNG - CVE-2023-39910)
   - MultiBit HD (seed-as-entropy bug)
   - Electrum pre-BIP39 (2011-2014 deterministic derivation)
@@ -43,6 +44,7 @@ Historical vulnerabilities this tool can reproduce:
 | Armory HD | 2012-2016 | Pre-BIP32 deterministic derivation |
 | LCG PRNGs | 1990s-2010s | glibc rand(), MINSTD, MSVC - only 31-32 bit state |
 | Xorshift PRNGs | 2003-present | V8/SpiderMonkey Math.random() - 64-128 bit state |
+| SHA256 chains | 2010s-present | Deterministic key derivation from weak seeds |
 
 ## Installation
 
@@ -352,6 +354,45 @@ Output (receiving address 0):
 P2PKH (uncompressed): 1FJEEB8ihPMbzs2SkLmr37dHyRFzakqUmo
 ```
 
+### SHA256 chain analyzer
+
+Detect keys generated using deterministic SHA256 chains (key[n] = SHA256(key[n-1]) or SHA256(seed || n)):
+
+```bash
+# Check with iterated chain (default): key[n] = SHA256(key[n-1])
+vuke analyze <KEY> --analyzer sha256_chain --chain-depth 20
+
+# Check indexed variant: key[n] = SHA256(seed || n as bytes)
+vuke analyze <KEY> --analyzer sha256_chain:indexed --chain-depth 20
+
+# With masking for puzzle analysis
+vuke analyze 0x15 --mask 5 --analyzer sha256_chain --chain-depth 10
+
+# With cascade filter for reduced false positives
+vuke analyze 0x15 --analyzer sha256_chain --cascade "5:0x15,10:0x202" --chain-depth 10
+```
+
+Supported variants:
+- `sha256_chain` or `sha256_chain:iterated` - Chain derivation: key[n] = SHA256(key[n-1])
+- `sha256_chain:indexed` or `sha256_chain:indexed:be` - Indexed: SHA256(seed || n) with big-endian
+- `sha256_chain:indexed:le` - Indexed with little-endian byte order
+- `sha256_chain:counter` - String indexed: SHA256(seed || "n")
+
+### SHA256 chain transform
+
+Generate keys using SHA256 chain derivation:
+
+```bash
+# Generate iterated chain keys from numeric seeds
+vuke generate --transform=sha256_chain range --start 1 --end 1000
+
+# Generate indexed chain with counter strings
+vuke generate --transform=sha256_chain:counter --chain-depth 5 wordlist --file seeds.txt
+
+# Generate with specific chain depth
+vuke generate --transform=sha256_chain:iterated --chain-depth 10 range --start 1 --end 100
+```
+
 ## Supported Transforms
 
 | Transform | Description | Use Case |
@@ -368,6 +409,7 @@ P2PKH (uncompressed): 1FJEEB8ihPMbzs2SkLmr37dHyRFzakqUmo
 | `electrum:change` | Electrum change chain | 2011-2014 Electrum change addresses |
 | `lcg[:variant][:endian]` | LCG PRNG with 32-bit seed | Legacy C stdlib rand() |
 | `xorshift[:variant]` | Xorshift PRNG with 64-bit seed | V8/SpiderMonkey Math.random() |
+| `sha256_chain[:variant]` | Deterministic SHA256 chain | Iterated/indexed key derivation |
 
 ## Supported Analyzers
 
@@ -383,6 +425,7 @@ P2PKH (uncompressed): 1FJEEB8ihPMbzs2SkLmr37dHyRFzakqUmo
 | `heuristic` | Statistical analysis | Entropy, hamming weight anomalies |
 | `lcg[:variant][:endian]` | Brute-force 2^31-2^32 seeds | Detect glibc/minstd/msvc/borland rand() |
 | `xorshift[:variant] --cascade` | Brute-force 2^64 with cascade filter | V8/SpiderMonkey xorshift PRNGs |
+| `sha256_chain[:variant]` | Brute-force 2^32 seeds with chain depth | Deterministic SHA256 key chains |
 
 ## Library Usage
 
@@ -422,6 +465,7 @@ src/
 ├── mt64.rs          # MT19937-64 PRNG shared logic
 ├── multibit.rs      # MultiBit HD bug logic (PBKDF2, BIP32)
 ├── electrum.rs      # Electrum pre-BIP39 deterministic derivation
+├── sha256_chain.rs  # SHA256 chain shared logic (iterated/indexed)
 ├── analyze/
 │   ├── mod.rs       # Analyzer trait and types
 │   ├── key_parser.rs # Parse hex/WIF/decimal keys
@@ -430,6 +474,7 @@ src/
 │   ├── multibit.rs  # MultiBit HD mnemonic verification
 │   ├── lcg.rs       # LCG brute-force (glibc, minstd, msvc, borland)
 │   ├── xorshift.rs  # Xorshift brute-force (requires cascade)
+│   ├── sha256_chain.rs # SHA256 chain brute-force
 │   ├── direct.rs    # Pattern detection
 │   ├── heuristic.rs # Statistical analysis
 │   └── output.rs    # Plain text and JSON formatting
@@ -452,6 +497,7 @@ src/
 │   ├── electrum.rs  # Electrum pre-BIP39 deterministic derivation
 │   ├── lcg.rs       # LCG PRNG transform
 │   ├── xorshift.rs  # Xorshift PRNG transform
+│   ├── sha256_chain.rs # SHA256 chain transform
 │   └── armory.rs    # Armory HD derivation
 └── output/
     ├── mod.rs       # Output trait

@@ -140,6 +140,10 @@ enum Command {
         #[arg(long, value_name = "PASSPHRASE", default_value = "")]
         passphrase: String,
 
+        /// Depth of SHA256 chain to search (for sha256_chain analyzer)
+        #[arg(long, value_name = "DEPTH", default_value = "10")]
+        chain_depth: u32,
+
         /// Output as JSON
         #[arg(long)]
         json: bool,
@@ -227,13 +231,13 @@ fn main() -> Result<()> {
 
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
 
-        Command::Analyze { key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json } => {
+        Command::Analyze { key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, chain_depth, json } => {
             #[cfg(feature = "gpu")]
             let use_gpu = !cli.no_gpu;
             #[cfg(not(feature = "gpu"))]
             let use_gpu = false;
 
-            run_analyze(&key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, json, use_gpu)
+            run_analyze(&key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, chain_depth, json, use_gpu)
         }
     }
 }
@@ -350,6 +354,7 @@ fn run_analyze(
     mnemonic: Option<String>,
     mnemonic_file: Option<PathBuf>,
     passphrase: String,
+    chain_depth: u32,
     json_output: bool,
     use_gpu: bool,
 ) -> Result<()> {
@@ -379,10 +384,16 @@ fn run_analyze(
     let analyzer_types = match analyzer_types {
         Some(mut types) => {
             for t in &mut types {
-                if let AnalyzerType::MultibitHd { mnemonic: ref mut m, mnemonic_file: ref mut f, passphrase: ref mut p } = t {
-                    *m = mnemonic.clone();
-                    *f = mnemonic_file.clone();
-                    *p = passphrase.clone();
+                match t {
+                    AnalyzerType::MultibitHd { mnemonic: ref mut m, mnemonic_file: ref mut f, passphrase: ref mut p } => {
+                        *m = mnemonic.clone();
+                        *f = mnemonic_file.clone();
+                        *p = passphrase.clone();
+                    }
+                    AnalyzerType::Sha256Chain { chain_depth: ref mut d, .. } => {
+                        *d = chain_depth;
+                    }
+                    _ => {}
                 }
             }
             types

@@ -8,6 +8,7 @@ pub mod electrum;
 pub mod lcg;
 pub mod mt64;
 pub mod multibit;
+pub mod sha256_chain;
 pub mod source;
 pub mod transform;
 pub mod xorshift;

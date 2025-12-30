@@ -10,9 +10,11 @@ mod buffer;
 mod shaders;
 mod mt19937;
 pub mod hash;
+pub mod sha256_chain;
 
 pub use context::GpuContext;
 pub use error::GpuError;
 pub use buffer::GpuBufferFactory;
 pub use mt19937::GpuMt19937Pipeline;
 pub use hash::{GpuHashPipeline, HashAlgorithm};
+pub use sha256_chain::GpuSha256ChainPipeline;
