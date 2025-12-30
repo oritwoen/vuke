@@ -11,6 +11,7 @@ mod direct;
 mod heuristic;
 mod lcg;
 mod xorshift;
+mod sha256_chain;
 mod output;
 
 pub use key_parser::{parse_private_key, parse_cascade, ParseError};
@@ -21,6 +22,7 @@ pub use direct::DirectAnalyzer;
 pub use heuristic::HeuristicAnalyzer;
 pub use lcg::LcgAnalyzer;
 pub use xorshift::XorshiftAnalyzer;
+pub use sha256_chain::Sha256ChainAnalyzer;
 pub use output::{format_results, format_results_json};
 
 use indicatif::ProgressBar;
@@ -145,6 +147,10 @@ pub enum AnalyzerType {
     Xorshift {
         variant: Option<crate::xorshift::XorshiftVariant>,
     },
+    Sha256Chain {
+        variant: Option<crate::sha256_chain::Sha256ChainVariant>,
+        chain_depth: u32,
+    },
 }
 
 impl AnalyzerType {
@@ -179,6 +185,13 @@ impl AnalyzerType {
                 };
                 Box::new(analyzer)
             }
+            AnalyzerType::Sha256Chain { variant, chain_depth } => {
+                let analyzer = match variant {
+                    Some(v) => Sha256ChainAnalyzer::with_variant(*v),
+                    None => Sha256ChainAnalyzer::new(),
+                };
+                Box::new(analyzer.with_chain_depth(*chain_depth))
+            }
         }
     }
 
@@ -189,6 +202,7 @@ impl AnalyzerType {
             AnalyzerType::Mt64,
             AnalyzerType::Lcg { variant: None, endian: crate::lcg::LcgEndian::Big },
             AnalyzerType::Xorshift { variant: None },
+            AnalyzerType::Sha256Chain { variant: None, chain_depth: crate::sha256_chain::DEFAULT_CHAIN_DEPTH },
             AnalyzerType::Direct,
             AnalyzerType::Heuristic,
         ]
@@ -228,7 +242,14 @@ impl AnalyzerType {
                     variant: config.variant,
                 })
             }
-            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, multibit-hd, direct, heuristic, lcg[:variant][:endian], xorshift[:variant]", s)),
+            _ if s == "sha256_chain" || s.starts_with("sha256_chain:") => {
+                let config = crate::sha256_chain::Sha256ChainConfig::parse(&s)?;
+                Ok(AnalyzerType::Sha256Chain {
+                    variant: config.variant,
+                    chain_depth: config.chain_depth,
+                })
+            }
+            _ => Err(format!("Unknown analyzer: {}. Valid: milksad, mt64, multibit-hd, direct, heuristic, lcg[:variant][:endian], xorshift[:variant], sha256_chain[:variant]", s)),
         }
     }
 }

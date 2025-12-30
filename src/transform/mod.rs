@@ -14,6 +14,7 @@ mod lcg;
 mod xorshift;
 mod multibit;
 mod electrum;
+mod sha256_chain;
 
 pub use input::Input;
 pub use direct::DirectTransform;
@@ -27,6 +28,7 @@ pub use lcg::LcgTransform;
 pub use xorshift::XorshiftTransform;
 pub use multibit::MultibitTransform;
 pub use electrum::ElectrumTransform;
+pub use sha256_chain::Sha256ChainTransform;
 
 /// 32-byte private key
 pub type Key = [u8; 32];
@@ -79,6 +81,10 @@ pub enum TransformType {
     Xorshift {
         variant: Option<crate::xorshift::XorshiftVariant>,
     },
+    Sha256Chain {
+        variant: Option<crate::sha256_chain::Sha256ChainVariant>,
+        chain_depth: u32,
+    },
 }
 
 impl TransformType {
@@ -115,6 +121,13 @@ impl TransformType {
                 };
                 Box::new(transform)
             }
+            TransformType::Sha256Chain { variant, chain_depth } => {
+                let transform = match variant {
+                    Some(v) => Sha256ChainTransform::with_variant(*v),
+                    None => Sha256ChainTransform::new(),
+                };
+                Box::new(transform.with_chain_depth(*chain_depth))
+            }
         }
     }
 
@@ -145,8 +158,15 @@ impl TransformType {
                     variant: config.variant,
                 })
             }
+            _ if s_lower == "sha256_chain" || s_lower.starts_with("sha256_chain:") => {
+                let config = crate::sha256_chain::Sha256ChainConfig::parse(&s_lower)?;
+                Ok(TransformType::Sha256Chain {
+                    variant: config.variant,
+                    chain_depth: config.chain_depth,
+                })
+            }
             _ => Err(format!(
-                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, multibit, electrum[:change], lcg[:variant][:endian], xorshift[:variant]",
+                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, multibit, electrum[:change], lcg[:variant][:endian], xorshift[:variant], sha256_chain[:variant]",
                 s
             )),
         }
