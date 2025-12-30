@@ -69,6 +69,9 @@ impl Transform for Sha256ChainTransform {
             }
 
             if let Some(num_val) = input.u64_val {
+                if num_val > u32::MAX as u64 {
+                    continue;
+                }
                 let seed_bytes = (num_val as u32).to_be_bytes();
                 for variant in &variants {
                     let chain = crate::sha256_chain::generate_chain(&seed_bytes, *variant, self.chain_depth);

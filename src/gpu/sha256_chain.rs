@@ -555,7 +555,11 @@ fn check_mask(key: &[u8; 32], bits: u8, target: u64) -> bool {
     } else {
         (1u64 << bits) - 1
     };
-    let high_bit: u64 = 1u64 << (bits - 1);
+    let high_bit: u64 = if bits >= 64 {
+        1u64 << 63
+    } else {
+        1u64 << (bits - 1)
+    };
     let masked = (key_u64 & mask) | high_bit;
     masked == target
 }

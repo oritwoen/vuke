@@ -167,7 +167,13 @@ impl Sha256ChainAnalyzer {
         } else {
             (1u64 << mask_bits) - 1
         };
-        let high_bit: u64 = 1u64 << (mask_bits - 1);
+        let high_bit: u64 = if mask_bits == 0 {
+            0
+        } else if mask_bits >= 64 {
+            1u64 << 63
+        } else {
+            1u64 << (mask_bits - 1)
+        };
 
         let variants = self.variants_to_test();
         let chain_depth = self.chain_depth;
@@ -337,7 +343,13 @@ impl Sha256ChainAnalyzer {
                         } else {
                             (1u64 << bits) - 1
                         };
-                        let high_bit: u64 = 1u64 << (bits - 1);
+                        let high_bit: u64 = if *bits == 0 {
+                            0
+                        } else if *bits >= 64 {
+                            1u64 << 63
+                        } else {
+                            1u64 << (bits - 1)
+                        };
                         let masked = (key_u64 & mask) | high_bit;
 
                         if masked != *target {
