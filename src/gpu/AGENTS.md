@@ -36,16 +36,11 @@ gpu/
 - **Workgroup size**: Use 256 for compute shaders (good occupancy)
 - **Atomic termination**: Use `atomicStore` for early exit on match
 - **Batched processing**: Process seeds in batches to balance CPU-GPU transfer
+- **Single-block hashing**: Shaders assume pre-padded 64-byte input blocks
 
 ## GPU CONTEXT
 
 ```rust
-pub struct GpuContext {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    // ...
-}
-
 impl GpuContext {
     pub fn new_sync() -> Result<Self, GpuError>;
     pub fn description(&self) -> String;
@@ -57,21 +52,12 @@ Initialize once, reuse across operations.
 ## SHADER PATTERN
 
 ```wgsl
-// Workgroup size for parallelism
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let seed = uniforms.start_seed + global_id.x;
-    
-    // Early termination check
-    if atomicLoad(&result.found) != 0u { return; }
-    
-    // Algorithm implementation...
-    
-    // On match: atomic write result
-    if match_found {
-        atomicStore(&result.found, 1u);
-        result.seed = seed;
-    }
+    if atomicLoad(&result.found) != 0u { return; }  // Early termination
+    // Algorithm...
+    if match_found { atomicStore(&result.found, 1u); result.seed = seed; }
 }
 ```
 
@@ -83,7 +69,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 | Storage | Results, large data | `@group(0) @binding(1) var<storage, read_write>` |
 | Staging | CPU ↔ GPU transfer | Not in shader |
 
-## ADDING GPU SUPPORT TO ANALYZER/TRANSFORM
+## ADDING GPU SUPPORT
 
 1. Check if operation is compute-bound (hash, brute-force)
 2. Create WGSL shader in `shaders/{algo}.wgsl`
@@ -94,14 +80,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 ## COMPLEXITY HOTSPOTS
 
-- `sha256_chain.rs` (661 lines) - Hybrid CPU-GPU pipelining, cascade filtering
-- `hash.rs` (538 lines) - Multi-algorithm support, double SHA256
-- `mt19937.rs` - Full MT19937 state in shader
+| File | Lines | Reason |
+|------|-------|--------|
+| `sha256_chain.rs` | 662 | Hybrid CPU-GPU pipelining, cascade filtering |
+| `hash.rs` | 538 | Multi-algorithm support, double SHA256 |
 
 ## DEPENDENCIES
 
 ```toml
-[dependencies]
 wgpu = { version = "24", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1.21", features = ["derive"], optional = true }

@@ -7,7 +7,7 @@ Reverse-engineer private key origins by detecting vulnerable generation patterns
 ```
 analyze/
 ├── mod.rs           # Analyzer trait, AnalyzerType enum, AnalysisResult
-├── key_parser.rs    # Parse hex/WIF/decimal keys
+├── key_parser.rs    # Parse hex/WIF/decimal keys, cascade targets
 ├── output.rs        # Plain text and JSON formatting
 ├── milksad.rs       # MT19937 brute-force (2^32 seeds) - GPU accelerated
 ├── mt64.rs          # MT19937-64 brute-force (requires cascade)
@@ -46,20 +46,9 @@ pub trait Analyzer: Send + Sync {
     fn supports_mask(&self) -> bool { false }
     fn is_brute_force(&self) -> bool { false }
     fn supports_gpu(&self) -> bool { false }
-    fn analyze_gpu(&self, ctx: &GpuContext, key: &Key, config: &AnalysisConfig, progress: Option<&ProgressBar>) -> Result<AnalysisResult>;
+    fn analyze_gpu(&self, ctx: &GpuContext, ...) -> Result<AnalysisResult>;
 }
 ```
-
-## ANALYSIS CONFIG
-
-```rust
-pub struct AnalysisConfig {
-    pub mask_bits: Option<u8>,           // N-bit masking for puzzles
-    pub cascade_targets: Option<Vec<CascadeTarget>>,  // Multi-target verification
-}
-```
-
-**Masking formula**: `masked = (full_key & ((1<<N)-1)) | (1<<(N-1))`
 
 ## ANALYSIS STATUS
 
@@ -73,15 +62,18 @@ pub struct AnalysisConfig {
 ## CASCADE FILTERING
 
 For large seed spaces (2^64), verify against multiple targets:
-
 ```bash
 vuke analyze 0x15 --analyzer mt64 --cascade "5:0x15,10:0x202,20:0xd2c55"
 ```
 
-Each cascade target must match at its bit width to confirm.
+**Masking formula**: `masked = (full_key & ((1<<N)-1)) | (1<<(N-1))`
 
 ## COMPLEXITY HOTSPOTS
 
-- `sha256_chain.rs` (842 lines) - Multiple variants, GPU support, cascade
-- `milksad.rs` (580 lines) - Full 2^32 brute-force with GPU
-- `xorshift.rs` (510 lines) - Multiple PRNG variants with cascade
+| File | Lines | Reason |
+|------|-------|--------|
+| `sha256_chain.rs` | 843 | Multiple variants, GPU support, cascade |
+| `milksad.rs` | 581 | Full 2^32 brute-force with GPU |
+| `xorshift.rs` | 511 | Multiple PRNG variants with cascade |
+
+**Refactoring potential**: Extract common brute-force framework (~200 lines per file), shared masking utilities (~50 lines), generic cascade formatting (~30 lines).

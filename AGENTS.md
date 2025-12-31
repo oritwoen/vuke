@@ -1,7 +1,7 @@
 # VUKE - PROJECT KNOWLEDGE BASE
 
 **Generated:** 2025-12-31
-**Commit:** 1ff907b
+**Commit:** c1f2d45
 **Branch:** main
 
 ## OVERVIEW
@@ -18,6 +18,7 @@ vuke/
 │   ├── gpu/          # WebGPU acceleration (WGSL shaders, pipelines)
 │   ├── source/       # Input providers (range, wordlist, timestamps, stdin)
 │   ├── output/       # Result formatting (console, files)
+│   ├── storage/      # Parquet/Arrow TB-scale persistence
 │   ├── main.rs       # CLI: generate, scan, single, bench, analyze commands
 │   ├── lib.rs        # Library exports
 │   ├── derive.rs     # Key → addresses/WIF derivation
@@ -35,8 +36,10 @@ vuke/
 | Add PRNG variant | `src/{prng}.rs` shared logic + transform + analyze | Keep config/logic in shared module |
 | GPU acceleration | `src/gpu/shaders/{algo}.wgsl` + `src/gpu/{algo}.rs` | Feature-gated behind `gpu` |
 | New input source | `src/source/{name}.rs` | Implement Source trait |
+| New output format | `src/output/{name}.rs` | Implement Output trait |
 | CLI changes | `src/main.rs` | clap derive macros |
 | Key derivation | `src/derive.rs` | secp256k1 + bitcoin crate |
+| Storage backend | `src/storage/{name}.rs` | Implement StorageBackend trait |
 
 ## CODE MAP
 
@@ -48,6 +51,7 @@ vuke/
 | `Analyzer` | `src/analyze/mod.rs` | Key origin detection |
 | `Source` | `src/source/mod.rs` | Input batch processing |
 | `Output` | `src/output/mod.rs` | Result formatting |
+| `StorageBackend` | `src/storage/mod.rs` | Persistent result storage |
 
 **Data Flow**:
 - **Generate/Scan**: Source → Transform → KeyDeriver → Matcher → Output
@@ -65,12 +69,16 @@ vuke/
 - **Variant configs**: `{Prng}Variant` enums + `{Prng}Config` structs for parameterization
 - **Cascade filtering**: Multi-target verification for 64-bit seed spaces (mt64, xorshift)
 - **Masked analysis**: `(full_key & mask) | (1 << (bits-1))` for puzzle solving
+- **Batch processing**: Always `&[Input]` → `&mut Vec<(String, Key)>`
+- **Progress bars**: Use `indicatif::ProgressBar` for long operations
+- **Early termination**: Use `AtomicBool` for found flag across threads
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
 - **Excessive `.unwrap()`**: 125+ instances, especially in GPU code - should use `?` operator
 - **No unsafe blocks**: Intentional, maintain memory safety
 - **No panic!()**: Prefer Result types
+- **No type suppression**: Never `as any`, `@ts-ignore` equivalent
 
 ## TRANSFORMS
 
@@ -107,7 +115,8 @@ vuke/
 # Dev
 cargo test                    # Run tests
 cargo build --release         # Build optimized
-cargo build --release --features gpu  # With GPU
+cargo build --release --features gpu      # With GPU
+cargo build --release --features storage  # With Parquet
 
 # Benchmarks
 cargo bench                   # Run benchmarks
@@ -124,7 +133,9 @@ just release 0.8.0           # Bump version, changelog, tag
 ## NOTES
 
 - **GPU feature**: Compile with `--features gpu` for WebGPU acceleration
+- **Storage feature**: Compile with `--features storage` for Parquet output
 - **Release profile**: Aggressive optimization (LTO, single codegen unit, stripped)
-- **Large files**: `src/analyze/sha256_chain.rs` (842L), `src/gpu/sha256_chain.rs` (661L) are complexity hotspots
+- **Large files**: `src/analyze/sha256_chain.rs` (843L), `src/gpu/sha256_chain.rs` (662L) - complexity hotspots with refactoring potential
 - **Rust 2021 edition**, requires Rust 1.70+
-- **TODO**: GPU for generate/scan needs Source trait redesign (main.rs:245)
+- **TODO**: GPU for generate/scan needs Source trait redesign (main.rs:322)
+- **Refactoring opportunity**: Extract common brute-force framework, masking utilities, cascade formatting across analyzers
