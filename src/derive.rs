@@ -10,6 +10,8 @@ use num_bigint::BigUint;
 /// Derived key with all address formats.
 #[derive(Debug, Clone)]
 pub struct DerivedKey {
+    /// Raw 32-byte private key
+    pub raw: [u8; 32],
     /// Raw private key hex (64 chars)
     pub private_key_hex: String,
     /// Private key as decimal string (for puzzle analysis)
@@ -119,15 +121,19 @@ impl KeyDeriver {
         let private_key_decimal = BigUint::from_bytes_be(&key_bytes).to_string();
 
         // Binary representation (256 bits, big-endian)
-        let private_key_binary: String = key_bytes.iter()
-            .flat_map(|byte| (0..8).rev().map(move |i| if byte & (1 << i) != 0 { '1' } else { '0' }))
+        let private_key_binary: String = key_bytes
+            .iter()
+            .flat_map(|byte| {
+                (0..8)
+                    .rev()
+                    .map(move |i| if byte & (1 << i) != 0 { '1' } else { '0' })
+            })
             .collect();
 
         // Bit length: 256 - leading zero bits
-        let leading_zero_bits: u16 = key_bytes.iter()
-            .take_while(|&&b| b == 0)
-            .count() as u16 * 8
-            + key_bytes.iter()
+        let leading_zero_bits: u16 = key_bytes.iter().take_while(|&&b| b == 0).count() as u16 * 8
+            + key_bytes
+                .iter()
                 .find(|&&b| b != 0)
                 .map(|b| b.leading_zeros() as u16)
                 .unwrap_or(0);
@@ -141,6 +147,7 @@ impl KeyDeriver {
         let leading_zeros = hex_str.chars().take_while(|&c| c == '0').count() as u8;
 
         DerivedKey {
+            raw: key_bytes,
             private_key_hex: hex_str,
             private_key_decimal,
             private_key_binary,
@@ -172,10 +179,9 @@ mod tests {
     fn test_derive_known_key() {
         // "correct horse battery staple" SHA256
         let key: [u8; 32] = [
-            0xc4, 0xbb, 0xcb, 0x1f, 0xbe, 0xc9, 0x9d, 0x65,
-            0xbf, 0x59, 0xd8, 0x5c, 0x8c, 0xb6, 0x2e, 0xe2,
-            0xdb, 0x96, 0x3f, 0x0f, 0xe1, 0x06, 0xf4, 0x83,
-            0xd9, 0xaf, 0xa7, 0x3b, 0xd4, 0xe3, 0x9a, 0x8a,
+            0xc4, 0xbb, 0xcb, 0x1f, 0xbe, 0xc9, 0x9d, 0x65, 0xbf, 0x59, 0xd8, 0x5c, 0x8c, 0xb6,
+            0x2e, 0xe2, 0xdb, 0x96, 0x3f, 0x0f, 0xe1, 0x06, 0xf4, 0x83, 0xd9, 0xaf, 0xa7, 0x3b,
+            0xd4, 0xe3, 0x9a, 0x8a,
         ];
 
         let deriver = KeyDeriver::new();

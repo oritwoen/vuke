@@ -84,13 +84,24 @@ impl Output for ConsoleOutput {
         Ok(())
     }
 
-    fn hit(&self, source: &str, transform: &str, derived: &DerivedKey, match_info: &MatchInfo) -> Result<()> {
+    fn hit(
+        &self,
+        source: &str,
+        transform: &str,
+        derived: &DerivedKey,
+        match_info: &MatchInfo,
+    ) -> Result<()> {
         let mut w = self.writer.lock().unwrap();
 
         writeln!(w, "\n========== HIT ==========")?;
         writeln!(w, "Source: {}", source)?;
         writeln!(w, "Transform: {}", transform)?;
-        writeln!(w, "Matched: {} ({})", match_info.address, match_info.address_type.as_str())?;
+        writeln!(
+            w,
+            "Matched: {} ({})",
+            match_info.address,
+            match_info.address_type.as_str()
+        )?;
         writeln!(w, "---")?;
         writeln!(w, "Private Key: {}", derived.private_key_hex)?;
         writeln!(w, "WIF (compressed): {}", derived.wif_compressed)?;
@@ -118,6 +129,11 @@ mod tests {
 
     fn make_test_key() -> DerivedKey {
         DerivedKey {
+            raw: [
+                0xab, 0xc1, 0x23, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ],
             private_key_hex: "abc123".to_string(),
             private_key_decimal: "123".to_string(),
             private_key_binary: "101".to_string(),
@@ -139,7 +155,9 @@ mod tests {
         let temp = NamedTempFile::new().unwrap();
         let output = ConsoleOutput::to_file(temp.path()).unwrap();
 
-        output.key("test_source", "sha256", &make_test_key()).unwrap();
+        output
+            .key("test_source", "sha256", &make_test_key())
+            .unwrap();
         output.flush().unwrap();
 
         let content = std::fs::read_to_string(temp.path()).unwrap();
@@ -151,7 +169,9 @@ mod tests {
         let temp = NamedTempFile::new().unwrap();
         let output = ConsoleOutput::to_file_verbose(temp.path()).unwrap();
 
-        output.key("test_source", "sha256", &make_test_key()).unwrap();
+        output
+            .key("test_source", "sha256", &make_test_key())
+            .unwrap();
         output.flush().unwrap();
 
         let content = std::fs::read_to_string(temp.path()).unwrap();
