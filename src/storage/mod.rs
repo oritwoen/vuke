@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use arrow::datatypes::Schema;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PrivateKeyRecord<'a> {
     pub raw: &'a [u8; 32],
     pub hex: &'a str,
@@ -14,6 +14,20 @@ pub struct PrivateKeyRecord<'a> {
     pub bit_length: u16,
     pub hamming_weight: u16,
     pub leading_zeros: u8,
+}
+
+impl std::fmt::Debug for PrivateKeyRecord<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PrivateKeyRecord")
+            .field("raw", &"[REDACTED]")
+            .field("hex", &"[REDACTED]")
+            .field("decimal", &"[REDACTED]")
+            .field("binary", &"[REDACTED]")
+            .field("bit_length", &self.bit_length)
+            .field("hamming_weight", &self.hamming_weight)
+            .field("leading_zeros", &self.leading_zeros)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -262,5 +276,30 @@ mod tests {
 
         let err = StorageError::NotInitialized;
         assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn private_key_debug_redacts_sensitive_data() {
+        let raw = [0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00,
+                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
+        let record = PrivateKeyRecord {
+            raw: &raw,
+            hex: "deadbeef00000001",
+            decimal: "999999999",
+            binary: "11011110101011011011111011101111",
+            bit_length: 256,
+            hamming_weight: 128,
+            leading_zeros: 0,
+        };
+
+        let debug_output = format!("{:?}", record);
+
+        assert!(!debug_output.contains("deadbeef"));
+        assert!(!debug_output.contains("999999999"));
+        assert!(!debug_output.contains("11011110"));
+        assert!(debug_output.contains("[REDACTED]"));
+        assert!(debug_output.contains("bit_length: 256"));
     }
 }
