@@ -79,29 +79,35 @@ impl ParquetBackend {
         self.completed_chunks.lock().unwrap().clone()
     }
 
-    fn generate_chunk_path(&self) -> PathBuf {
-        let mut date_guard = self.chunk_date.lock().unwrap();
+    fn generate_chunk_path(&self) -> Result<PathBuf> {
+        let mut date_guard = self.chunk_date.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
         let date = date_guard.get_or_insert_with(|| Utc::now().format("%Y-%m-%d").to_string());
 
-        let mut index_guard = self.chunk_index.lock().unwrap();
+        let mut index_guard = self.chunk_index.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
         *index_guard += 1;
         let index = *index_guard;
 
-        self.base_dir.join(format!("{}_chunk_{:04}.parquet", date, index))
+        Ok(self.base_dir.join(format!("{}_chunk_{:04}.parquet", date, index)))
     }
 
-    fn should_rotate(&self) -> bool {
+    fn should_rotate(&self) -> Result<bool> {
         if let Some(max_records) = self.max_chunk_records {
-            if *self.chunk_records.lock().unwrap() >= max_records {
-                return true;
+            let records = *self.chunk_records.lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
+            if records >= max_records {
+                return Ok(true);
             }
         }
         if let Some(max_bytes) = self.max_chunk_bytes {
-            if *self.chunk_bytes.lock().unwrap() >= max_bytes {
-                return true;
+            let bytes = *self.chunk_bytes.lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
+            if bytes >= max_bytes {
+                return Ok(true);
             }
         }
-        false
+        Ok(false)
     }
 
     fn rotate_chunk(&mut self) -> Result<()> {
@@ -135,7 +141,7 @@ impl ParquetBackend {
 
         if writer_guard.is_none() {
             fs::create_dir_all(&self.base_dir)?;
-            let chunk_path = self.generate_chunk_path();
+            let chunk_path = self.generate_chunk_path()?;
             let file = File::create(&chunk_path)?;
             let props = WriterProperties::builder()
                 .set_compression(self.compression)
@@ -156,7 +162,7 @@ impl StorageBackend for ParquetBackend {
             return Ok(());
         }
 
-        if self.should_rotate() {
+        if self.should_rotate()? {
             self.rotate_chunk()?;
         }
 
