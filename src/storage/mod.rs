@@ -1,5 +1,9 @@
 //! Persistent storage backends for generated keys.
 
+mod schema;
+
+pub use schema::{fields, records_to_batch, result_schema};
+
 use std::fmt;
 use std::path::PathBuf;
 

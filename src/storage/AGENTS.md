@@ -7,9 +7,9 @@ Persistent storage backends for TB-scale result persistence using columnar forma
 ```
 storage/
 ├── mod.rs           # StorageBackend trait, record types, errors
+├── schema.rs        # Arrow schema definition + records_to_batch conversion (#34)
 └── (future)
-    ├── parquet.rs   # ParquetBackend implementation (#35)
-    └── schema.rs    # Arrow schema definition (#34)
+    └── parquet.rs   # ParquetBackend implementation (#35)
 ```
 
 ## WHERE TO LOOK
@@ -19,14 +19,39 @@ storage/
 | Add new backend | Implement `StorageBackend` trait in `{name}.rs` |
 | Modify record structure | `mod.rs` - record structs |
 | Add error variant | `mod.rs` - `StorageError` enum |
-| Schema changes | Future `schema.rs` (#34) |
+| Schema changes | `schema.rs` - Arrow schema + field constants |
+| Add new column | `schema.rs` - update `result_schema()` + `records_to_batch()` |
 
 ## CONVENTIONS
 
 - **Feature-gated**: Entire module behind `#[cfg(feature = "storage")]`
 - **Chain-agnostic**: Record types support any blockchain (Bitcoin, Ethereum, Solana, etc.)
 - **Zero-copy**: Record structs use `&'a str` and `&'a [T]` for efficiency
-- **List types**: Variable-length fields (addresses, public_keys) use Arrow List types
+- **Flat schema**: Variable-length fields (addresses, public_keys) mapped to fixed columns for SQL-friendly querying
+
+## ARROW SCHEMA (19 columns)
+
+| Column | Type | Nullable | Description |
+|--------|------|----------|-------------|
+| source | Utf8 | No | Input value (seed, passphrase) |
+| transform | Utf8 | No | Transform name (sha256, milksad) |
+| chain | Utf8 | No | Blockchain (bitcoin, ethereum) |
+| timestamp | Timestamp(ms, UTC) | No | Generation time |
+| matched_target | Utf8 | Yes | Matched address (scan hits only) |
+| private_key_raw | FixedSizeBinary(32) | No | Raw 32-byte key |
+| private_key_hex | Utf8 | No | Hex representation |
+| private_key_decimal | Utf8 | No | Decimal representation |
+| private_key_binary | Utf8 | No | Binary representation (256 chars) |
+| private_key_bit_length | UInt16 | No | Effective bit length |
+| private_key_hamming_weight | UInt16 | No | Number of 1-bits |
+| private_key_leading_zeros | UInt8 | No | Leading zeros in hex |
+| pubkey_compressed | Utf8 | Yes | Compressed public key |
+| pubkey_uncompressed | Utf8 | Yes | Uncompressed public key |
+| address_p2pkh_compressed | Utf8 | Yes | P2PKH (compressed) |
+| address_p2pkh_uncompressed | Utf8 | Yes | P2PKH (uncompressed) |
+| address_p2wpkh | Utf8 | Yes | P2WPKH (native segwit) |
+| wif_compressed | Utf8 | Yes | WIF compressed |
+| wif_uncompressed | Utf8 | Yes | WIF uncompressed |
 
 ## STORAGE BACKEND TRAIT
 
@@ -62,8 +87,8 @@ pub trait StorageBackend: Send + Sync {
 ## RELATED ISSUES
 
 - #25 - Parent: TB-scale Parquet-based storage
-- #33 - StorageBackend trait definition (this)
-- #34 - Arrow schema for results
+- #33 - StorageBackend trait definition (done)
+- #34 - Arrow schema for results (done)
 - #35 - ParquetBackend implementation
 - #36 - Automatic chunk rotation
 - #37 - Basic partitioning (transform/date)
