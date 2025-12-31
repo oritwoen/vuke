@@ -67,7 +67,7 @@ pub trait StorageBackend: Send + Sync {
 ## PARQUET BACKEND
 
 ```rust
-ParquetBackend::new("results/")
+ParquetBackend::new("results/", "milksad")
     .with_compression(Compression::ZSTD(Default::default()))
     .with_chunk_records(1_000_000)
     .with_chunk_bytes(100 * 1024 * 1024)
@@ -80,14 +80,18 @@ ParquetBackend::new("results/")
 | `without_chunking()` | - | Disable auto-rotation |
 | `with_compression(c)` | ZSTD | Set compression algorithm |
 
-Chunk naming: `{YYYY-MM-DD}_chunk_{NNNN}.parquet`
+Hive-style partitioning: `transform={name}/date={YYYY-MM-DD}/chunk_{NNNN}.parquet`
 
 Output structure:
 ```
 results/
-  2025-01-15_chunk_0001.parquet
-  2025-01-15_chunk_0002.parquet
-  ...
+  transform=milksad/
+    date=2025-01-15/
+      chunk_0001.parquet
+      chunk_0002.parquet
+  transform=sha256/
+    date=2025-01-15/
+      chunk_0001.parquet
 ```
 
 ## RECORD TYPES
@@ -118,7 +122,7 @@ results/
 - #34 - Arrow schema for results (done)
 - #35 - ParquetBackend implementation (done)
 - #36 - Automatic chunk rotation (done)
-- #37 - Basic partitioning (transform/date)
+- #37 - Basic partitioning (transform/date) (done)
 - #38 - CLI `--storage` flag integration
 
 ## DEPENDENCIES

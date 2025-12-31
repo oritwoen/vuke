@@ -15,6 +15,7 @@ const DEFAULT_CHUNK_BYTES: u64 = 100 * 1024 * 1024;
 
 pub struct ParquetBackend {
     base_dir: PathBuf,
+    transform: String,
     schema: Arc<Schema>,
     compression: Compression,
     max_chunk_records: Option<u64>,
@@ -29,9 +30,10 @@ pub struct ParquetBackend {
 }
 
 impl ParquetBackend {
-    pub fn new(base_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(base_dir: impl Into<PathBuf>, transform: impl Into<String>) -> Self {
         Self {
             base_dir: base_dir.into(),
+            transform: transform.into(),
             schema: Arc::new(result_schema()),
             compression: Compression::ZSTD(Default::default()),
             max_chunk_records: Some(DEFAULT_CHUNK_RECORDS),
@@ -52,12 +54,20 @@ impl ParquetBackend {
     }
 
     pub fn with_chunk_records(mut self, max_records: u64) -> Self {
-        self.max_chunk_records = if max_records == 0 { None } else { Some(max_records) };
+        self.max_chunk_records = if max_records == 0 {
+            None
+        } else {
+            Some(max_records)
+        };
         self
     }
 
     pub fn with_chunk_bytes(mut self, max_bytes: u64) -> Self {
-        self.max_chunk_bytes = if max_bytes == 0 { None } else { Some(max_bytes) };
+        self.max_chunk_bytes = if max_bytes == 0 {
+            None
+        } else {
+            Some(max_bytes)
+        };
         self
     }
 
@@ -80,28 +90,42 @@ impl ParquetBackend {
     }
 
     fn generate_chunk_path(&self) -> Result<PathBuf> {
-        let mut date_guard = self.chunk_date.lock()
+        let mut date_guard = self
+            .chunk_date
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
         let date = date_guard.get_or_insert_with(|| Utc::now().format("%Y-%m-%d").to_string());
 
-        let mut index_guard = self.chunk_index.lock()
+        let mut index_guard = self
+            .chunk_index
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
         *index_guard += 1;
         let index = *index_guard;
 
-        Ok(self.base_dir.join(format!("{}_chunk_{:04}.parquet", date, index)))
+        // Hive-style partitioning: transform=X/date=Y/chunk_NNNN.parquet
+        let partition_path = self
+            .base_dir
+            .join(format!("transform={}", self.transform))
+            .join(format!("date={}", date));
+
+        Ok(partition_path.join(format!("chunk_{:04}.parquet", index)))
     }
 
     fn should_rotate(&self) -> Result<bool> {
         if let Some(max_records) = self.max_chunk_records {
-            let records = *self.chunk_records.lock()
+            let records = *self
+                .chunk_records
+                .lock()
                 .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
             if records >= max_records {
                 return Ok(true);
             }
         }
         if let Some(max_bytes) = self.max_chunk_bytes {
-            let bytes = *self.chunk_bytes.lock()
+            let bytes = *self
+                .chunk_bytes
+                .lock()
                 .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
             if bytes >= max_bytes {
                 return Ok(true);
@@ -111,45 +135,61 @@ impl ParquetBackend {
     }
 
     fn rotate_chunk(&mut self) -> Result<()> {
-        let mut writer_guard = self.writer.lock()
+        let mut writer_guard = self
+            .writer
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
 
         if let Some(writer) = writer_guard.take() {
             writer.close()?;
         }
 
-        if let Some(path) = self.current_chunk_path.lock()
+        if let Some(path) = self
+            .current_chunk_path
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
             .take()
         {
-            self.completed_chunks.lock()
+            self.completed_chunks
+                .lock()
                 .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
                 .push(path);
         }
 
-        *self.chunk_records.lock()
+        *self
+            .chunk_records
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? = 0;
-        *self.chunk_bytes.lock()
+        *self
+            .chunk_bytes
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? = 0;
 
         Ok(())
     }
 
     fn ensure_writer(&mut self) -> Result<()> {
-        let mut writer_guard = self.writer.lock()
+        let mut writer_guard = self
+            .writer
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
 
         if writer_guard.is_none() {
-            fs::create_dir_all(&self.base_dir)?;
             let chunk_path = self.generate_chunk_path()?;
+            if let Some(parent) = chunk_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
             let file = File::create(&chunk_path)?;
             let props = WriterProperties::builder()
                 .set_compression(self.compression)
                 .build();
             let writer = ArrowWriter::try_new(file, self.schema.clone(), Some(props))?;
             *writer_guard = Some(writer);
-            *self.current_chunk_path.lock()
-                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? = Some(chunk_path);
+            *self
+                .current_chunk_path
+                .lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? =
+                Some(chunk_path);
         }
 
         Ok(())
@@ -172,7 +212,9 @@ impl StorageBackend for ParquetBackend {
         let batch_bytes = batch.get_array_memory_size() as u64;
 
         {
-            let mut writer_guard = self.writer.lock()
+            let mut writer_guard = self
+                .writer
+                .lock()
                 .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
             writer_guard
                 .as_mut()
@@ -180,32 +222,44 @@ impl StorageBackend for ParquetBackend {
                 .write(&batch)?;
         }
 
-        *self.chunk_records.lock()
-            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? += records.len() as u64;
-        *self.chunk_bytes.lock()
+        *self
+            .chunk_records
+            .lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? +=
+            records.len() as u64;
+        *self
+            .chunk_bytes
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? += batch_bytes;
 
         Ok(())
     }
 
     fn flush(&mut self) -> Result<Vec<PathBuf>> {
-        let mut writer_guard = self.writer.lock()
+        let mut writer_guard = self
+            .writer
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
 
         if let Some(writer) = writer_guard.take() {
             writer.close()?;
         }
 
-        if let Some(path) = self.current_chunk_path.lock()
+        if let Some(path) = self
+            .current_chunk_path
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
             .take()
         {
-            self.completed_chunks.lock()
+            self.completed_chunks
+                .lock()
                 .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
                 .push(path);
         }
 
-        Ok(self.completed_chunks.lock()
+        Ok(self
+            .completed_chunks
+            .lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
             .clone())
     }
@@ -217,9 +271,7 @@ impl StorageBackend for ParquetBackend {
 
 impl Drop for ParquetBackend {
     fn drop(&mut self) {
-        let has_unflushed = self.writer.lock()
-            .map(|w| w.is_some())
-            .unwrap_or(false);
+        let has_unflushed = self.writer.lock().map(|w| w.is_some()).unwrap_or(false);
 
         if has_unflushed {
             eprintln!(
@@ -257,7 +309,8 @@ mod tests {
             private_key: PrivateKeyRecord {
                 raw,
                 hex: "0101010101010101010101010101010101010101010101010101010101010101",
-                decimal: "454086624460063511464984254936031011189294057512315937409637584344757371137",
+                decimal:
+                    "454086624460063511464984254936031011189294057512315937409637584344757371137",
                 binary: "0000000100000001000000010000000100000001000000010000000100000001\
                          0000000100000001000000010000000100000001000000010000000100000001\
                          0000000100000001000000010000000100000001000000010000000100000001\
@@ -275,14 +328,14 @@ mod tests {
 
     #[test]
     fn new_creates_backend() {
-        let backend = ParquetBackend::new("results");
+        let backend = ParquetBackend::new("results", "sha256");
         assert_eq!(backend.base_dir(), &PathBuf::from("results"));
         assert!(backend.writer.lock().unwrap().is_none());
     }
 
     #[test]
     fn schema_returns_result_schema() {
-        let backend = ParquetBackend::new("results");
+        let backend = ParquetBackend::new("results", "sha256");
         let schema = backend.schema();
         assert_eq!(schema.fields().len(), 19);
         assert_eq!(schema.field(0).name(), "source");
@@ -290,42 +343,42 @@ mod tests {
 
     #[test]
     fn with_compression_sets_compression() {
-        let backend = ParquetBackend::new("results").with_compression(Compression::LZ4);
+        let backend = ParquetBackend::new("results", "sha256").with_compression(Compression::LZ4);
         assert!(matches!(backend.compression(), Compression::LZ4));
 
-        let backend_zstd = ParquetBackend::new("results")
+        let backend_zstd = ParquetBackend::new("results", "sha256")
             .with_compression(Compression::ZSTD(ZstdLevel::try_new(3).unwrap()));
         assert!(matches!(backend_zstd.compression(), Compression::ZSTD(_)));
     }
 
     #[test]
     fn default_compression_is_zstd() {
-        let backend = ParquetBackend::new("results");
+        let backend = ParquetBackend::new("results", "sha256");
         assert!(matches!(backend.compression(), Compression::ZSTD(_)));
     }
 
     #[test]
     fn with_chunk_records_sets_threshold() {
-        let backend = ParquetBackend::new("results").with_chunk_records(500_000);
+        let backend = ParquetBackend::new("results", "sha256").with_chunk_records(500_000);
         assert_eq!(backend.max_chunk_records, Some(500_000));
     }
 
     #[test]
     fn with_chunk_bytes_sets_threshold() {
-        let backend = ParquetBackend::new("results").with_chunk_bytes(50 * 1024 * 1024);
+        let backend = ParquetBackend::new("results", "sha256").with_chunk_bytes(50 * 1024 * 1024);
         assert_eq!(backend.max_chunk_bytes, Some(50 * 1024 * 1024));
     }
 
     #[test]
     fn without_chunking_disables_thresholds() {
-        let backend = ParquetBackend::new("results").without_chunking();
+        let backend = ParquetBackend::new("results", "sha256").without_chunking();
         assert_eq!(backend.max_chunk_records, None);
         assert_eq!(backend.max_chunk_bytes, None);
     }
 
     #[test]
     fn zero_threshold_disables_chunking() {
-        let backend = ParquetBackend::new("results")
+        let backend = ParquetBackend::new("results", "sha256")
             .with_chunk_records(0)
             .with_chunk_bytes(0);
         assert_eq!(backend.max_chunk_records, None);
@@ -335,7 +388,7 @@ mod tests {
     #[test]
     fn write_empty_batch_succeeds() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path());
+        let mut backend = ParquetBackend::new(dir.path(), "sha256");
 
         let result = backend.write_batch(&[]);
         assert!(result.is_ok());
@@ -345,7 +398,7 @@ mod tests {
     #[test]
     fn write_single_record() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path());
+        let mut backend = ParquetBackend::new(dir.path(), "sha256");
 
         let raw = [1u8; 32];
         let record = make_test_record(&raw, "test_source", &[], &[], &[], None);
@@ -356,13 +409,13 @@ mod tests {
         let paths = backend.flush().unwrap();
         assert_eq!(paths.len(), 1);
         assert!(paths[0].exists());
-        assert!(paths[0].to_string_lossy().contains("_chunk_0001.parquet"));
+        assert!(paths[0].to_string_lossy().contains("chunk_0001.parquet"));
     }
 
     #[test]
     fn write_multiple_batches() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path());
+        let mut backend = ParquetBackend::new(dir.path(), "sha256");
 
         let raw1 = [1u8; 32];
         let raw2 = [2u8; 32];
@@ -383,7 +436,7 @@ mod tests {
     #[test]
     fn flush_returns_paths() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path());
+        let mut backend = ParquetBackend::new(dir.path(), "sha256");
 
         let raw = [1u8; 32];
         let record = make_test_record(&raw, "test", &[], &[], &[], None);
@@ -397,7 +450,7 @@ mod tests {
     #[test]
     fn flush_without_write_returns_empty() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path());
+        let mut backend = ParquetBackend::new(dir.path(), "sha256");
 
         let paths = backend.flush().unwrap();
         assert!(paths.is_empty());
@@ -406,7 +459,7 @@ mod tests {
     #[test]
     fn chunk_rotation_by_records() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path())
+        let mut backend = ParquetBackend::new(dir.path(), "sha256")
             .with_chunk_records(2)
             .with_chunk_bytes(0);
 
@@ -419,15 +472,15 @@ mod tests {
 
         let paths = backend.flush().unwrap();
         assert_eq!(paths.len(), 3);
-        assert!(paths[0].to_string_lossy().contains("_chunk_0001.parquet"));
-        assert!(paths[1].to_string_lossy().contains("_chunk_0002.parquet"));
-        assert!(paths[2].to_string_lossy().contains("_chunk_0003.parquet"));
+        assert!(paths[0].to_string_lossy().contains("chunk_0001.parquet"));
+        assert!(paths[1].to_string_lossy().contains("chunk_0002.parquet"));
+        assert!(paths[2].to_string_lossy().contains("chunk_0003.parquet"));
     }
 
     #[test]
     fn chunk_rotation_by_bytes() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path())
+        let mut backend = ParquetBackend::new(dir.path(), "sha256")
             .with_chunk_records(0)
             .with_chunk_bytes(1000);
 
@@ -439,7 +492,11 @@ mod tests {
         }
 
         let paths = backend.flush().unwrap();
-        assert!(paths.len() >= 2, "Expected multiple chunks, got {}", paths.len());
+        assert!(
+            paths.len() >= 2,
+            "Expected multiple chunks, got {}",
+            paths.len()
+        );
         for path in &paths {
             assert!(path.exists());
         }
@@ -448,7 +505,7 @@ mod tests {
     #[test]
     fn chunk_paths_returns_completed_chunks() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path())
+        let mut backend = ParquetBackend::new(dir.path(), "sha256")
             .with_chunk_records(1)
             .with_chunk_bytes(0);
 
@@ -466,7 +523,7 @@ mod tests {
     #[test]
     fn write_and_read_parquet_roundtrip() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path());
+        let mut backend = ParquetBackend::new(dir.path(), "sha256");
 
         let raw1 = [0xab_u8; 32];
         let raw2 = [0xcd_u8; 32];
@@ -572,13 +629,13 @@ mod tests {
             .collect();
 
         let dir_zstd = dir.path().join("zstd");
-        let mut backend_zstd = ParquetBackend::new(&dir_zstd);
+        let mut backend_zstd = ParquetBackend::new(&dir_zstd, "sha256");
         backend_zstd.write_batch(&records).unwrap();
         let paths_zstd = backend_zstd.flush().unwrap();
 
         let dir_none = dir.path().join("none");
         let mut backend_none =
-            ParquetBackend::new(&dir_none).with_compression(Compression::UNCOMPRESSED);
+            ParquetBackend::new(&dir_none, "sha256").with_compression(Compression::UNCOMPRESSED);
         backend_none.write_batch(&records).unwrap();
         let paths_none = backend_none.flush().unwrap();
 
@@ -596,7 +653,7 @@ mod tests {
     #[test]
     fn read_all_chunks_integration() {
         let dir = tempdir().unwrap();
-        let mut backend = ParquetBackend::new(dir.path())
+        let mut backend = ParquetBackend::new(dir.path(), "sha256")
             .with_chunk_records(2)
             .with_chunk_bytes(0);
 
@@ -619,5 +676,34 @@ mod tests {
             }
         }
         assert_eq!(total_rows, 6);
+    }
+
+    #[test]
+    fn creates_hive_partitioned_structure() {
+        let dir = tempdir().unwrap();
+        let mut backend = ParquetBackend::new(dir.path(), "milksad");
+
+        let raw = [1u8; 32];
+        let record = make_test_record(&raw, "test", &[], &[], &[], None);
+        backend.write_batch(&[record]).unwrap();
+        let paths = backend.flush().unwrap();
+
+        assert_eq!(paths.len(), 1);
+        let path_str = paths[0].to_string_lossy();
+        assert!(
+            path_str.contains("transform=milksad"),
+            "Missing transform partition: {}",
+            path_str
+        );
+        assert!(
+            path_str.contains("/date="),
+            "Missing date partition: {}",
+            path_str
+        );
+        assert!(
+            path_str.ends_with("chunk_0001.parquet"),
+            "Wrong chunk name: {}",
+            path_str
+        );
     }
 }
