@@ -8,7 +8,7 @@ Persistent storage backends for TB-scale result persistence using columnar forma
 storage/
 ├── mod.rs              # StorageBackend trait, record types, errors
 ├── schema.rs           # Arrow schema definition + records_to_batch conversion (#34)
-└── parquet_backend.rs  # ParquetBackend implementation (#35)
+└── parquet_backend.rs  # ParquetBackend with auto chunk rotation (#35, #36)
 ```
 
 ## WHERE TO LOOK
@@ -20,6 +20,7 @@ storage/
 | Add error variant | `mod.rs` - `StorageError` enum |
 | Schema changes | `schema.rs` - Arrow schema + field constants |
 | Add new column | `schema.rs` - update `result_schema()` + `records_to_batch()` |
+| Chunk rotation logic | `parquet_backend.rs` - `should_rotate()`, `rotate_chunk()` |
 
 ## CONVENTIONS
 
@@ -27,6 +28,7 @@ storage/
 - **Chain-agnostic**: Record types support any blockchain (Bitcoin, Ethereum, Solana, etc.)
 - **Zero-copy**: Record structs use `&'a str` and `&'a [T]` for efficiency
 - **Flat schema**: Variable-length fields (addresses, public_keys) mapped to fixed columns for SQL-friendly querying
+- **Auto-chunking**: ParquetBackend rotates files at configurable record/byte thresholds
 
 ## ARROW SCHEMA (19 columns)
 
@@ -57,9 +59,35 @@ storage/
 ```rust
 pub trait StorageBackend: Send + Sync {
     fn write_batch(&mut self, records: &[ResultRecord<'_>]) -> Result<()>;
-    fn flush(&mut self) -> Result<PathBuf>;
+    fn flush(&mut self) -> Result<Vec<PathBuf>>;
     fn schema(&self) -> &Schema;
 }
+```
+
+## PARQUET BACKEND
+
+```rust
+ParquetBackend::new("results/")
+    .with_compression(Compression::ZSTD(Default::default()))
+    .with_chunk_records(1_000_000)
+    .with_chunk_bytes(100 * 1024 * 1024)
+```
+
+| Method | Default | Description |
+|--------|---------|-------------|
+| `with_chunk_records(n)` | 1M | Rotate after N records |
+| `with_chunk_bytes(n)` | 100MB | Rotate after N bytes (in-memory Arrow size, not compressed) |
+| `without_chunking()` | - | Disable auto-rotation |
+| `with_compression(c)` | ZSTD | Set compression algorithm |
+
+Chunk naming: `{YYYY-MM-DD}_chunk_{NNNN}.parquet`
+
+Output structure:
+```
+results/
+  2025-01-15_chunk_0001.parquet
+  2025-01-15_chunk_0002.parquet
+  ...
 ```
 
 ## RECORD TYPES
@@ -89,7 +117,7 @@ pub trait StorageBackend: Send + Sync {
 - #33 - StorageBackend trait definition (done)
 - #34 - Arrow schema for results (done)
 - #35 - ParquetBackend implementation (done)
-- #36 - Automatic chunk rotation
+- #36 - Automatic chunk rotation (done)
 - #37 - Basic partitioning (transform/date)
 - #38 - CLI `--storage` flag integration
 

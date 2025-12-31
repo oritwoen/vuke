@@ -1,167 +1,208 @@
-//! Parquet storage backend for persistent result storage.
-//!
-//! Implements `StorageBackend` using Apache Parquet format with zstd compression
-//! for efficient TB-scale storage of generated keys.
-
-use std::fs::File;
+use std::fs::{self, File};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::Schema;
+use chrono::Utc;
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 
 use super::{records_to_batch, result_schema, Result, ResultRecord, StorageBackend, StorageError};
 
-/// Parquet-based storage backend for persistent result storage.
-///
-/// Uses Apache Parquet columnar format with configurable compression.
-/// Writer is lazily initialized on first `write_batch` call.
-///
-/// # Example
-///
-/// ```no_run
-/// use vuke::storage::{ParquetBackend, StorageBackend, ResultRecord};
-///
-/// let mut backend = ParquetBackend::new("results.parquet");
-/// // backend.write_batch(&records)?;
-/// // let path = backend.flush()?;
-/// ```
+const DEFAULT_CHUNK_RECORDS: u64 = 1_000_000;
+const DEFAULT_CHUNK_BYTES: u64 = 100 * 1024 * 1024;
+
 pub struct ParquetBackend {
-    path: PathBuf,
-    writer: Mutex<Option<ArrowWriter<File>>>,
+    base_dir: PathBuf,
     schema: Arc<Schema>,
     compression: Compression,
+    max_chunk_records: Option<u64>,
+    max_chunk_bytes: Option<u64>,
+    writer: Mutex<Option<ArrowWriter<File>>>,
+    current_chunk_path: Mutex<Option<PathBuf>>,
+    chunk_index: Mutex<u32>,
+    chunk_records: Mutex<u64>,
+    chunk_bytes: Mutex<u64>,
+    completed_chunks: Mutex<Vec<PathBuf>>,
+    chunk_date: Mutex<Option<String>>,
 }
 
 impl ParquetBackend {
-    /// Creates a new ParquetBackend with default zstd compression.
-    ///
-    /// The writer is lazily initialized on first `write_batch` call,
-    /// so the file is not created until data is actually written.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Output path for the Parquet file
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use vuke::storage::ParquetBackend;
-    ///
-    /// let backend = ParquetBackend::new("output.parquet");
-    /// ```
-    pub fn new(path: impl Into<PathBuf>) -> Self {
+    pub fn new(base_dir: impl Into<PathBuf>) -> Self {
         Self {
-            path: path.into(),
-            writer: Mutex::new(None),
+            base_dir: base_dir.into(),
             schema: Arc::new(result_schema()),
             compression: Compression::ZSTD(Default::default()),
+            max_chunk_records: Some(DEFAULT_CHUNK_RECORDS),
+            max_chunk_bytes: Some(DEFAULT_CHUNK_BYTES),
+            writer: Mutex::new(None),
+            current_chunk_path: Mutex::new(None),
+            chunk_index: Mutex::new(0),
+            chunk_records: Mutex::new(0),
+            chunk_bytes: Mutex::new(0),
+            completed_chunks: Mutex::new(Vec::new()),
+            chunk_date: Mutex::new(None),
         }
     }
 
-    /// Sets the compression algorithm for the Parquet file.
-    ///
-    /// # Arguments
-    ///
-    /// * `compression` - Compression algorithm (ZSTD, LZ4, SNAPPY, etc.)
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use vuke::storage::ParquetBackend;
-    /// use parquet::basic::Compression;
-    ///
-    /// let backend = ParquetBackend::new("output.parquet")
-    ///     .with_compression(Compression::LZ4);
-    /// ```
     pub fn with_compression(mut self, compression: Compression) -> Self {
         self.compression = compression;
         self
     }
 
-    /// Returns the configured compression algorithm.
+    pub fn with_chunk_records(mut self, max_records: u64) -> Self {
+        self.max_chunk_records = if max_records == 0 { None } else { Some(max_records) };
+        self
+    }
+
+    pub fn with_chunk_bytes(mut self, max_bytes: u64) -> Self {
+        self.max_chunk_bytes = if max_bytes == 0 { None } else { Some(max_bytes) };
+        self
+    }
+
+    pub fn without_chunking(mut self) -> Self {
+        self.max_chunk_records = None;
+        self.max_chunk_bytes = None;
+        self
+    }
+
     pub fn compression(&self) -> Compression {
         self.compression
     }
 
-    /// Returns the output path.
-    pub fn path(&self) -> &PathBuf {
-        &self.path
+    pub fn base_dir(&self) -> &PathBuf {
+        &self.base_dir
+    }
+
+    pub fn chunk_paths(&self) -> Vec<PathBuf> {
+        self.completed_chunks.lock().unwrap().clone()
+    }
+
+    fn generate_chunk_path(&self) -> PathBuf {
+        let mut date_guard = self.chunk_date.lock().unwrap();
+        let date = date_guard.get_or_insert_with(|| Utc::now().format("%Y-%m-%d").to_string());
+
+        let mut index_guard = self.chunk_index.lock().unwrap();
+        *index_guard += 1;
+        let index = *index_guard;
+
+        self.base_dir.join(format!("{}_chunk_{:04}.parquet", date, index))
+    }
+
+    fn should_rotate(&self) -> bool {
+        if let Some(max_records) = self.max_chunk_records {
+            if *self.chunk_records.lock().unwrap() >= max_records {
+                return true;
+            }
+        }
+        if let Some(max_bytes) = self.max_chunk_bytes {
+            if *self.chunk_bytes.lock().unwrap() >= max_bytes {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn rotate_chunk(&mut self) -> Result<()> {
+        let mut writer_guard = self.writer.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
+
+        if let Some(writer) = writer_guard.take() {
+            writer.close()?;
+        }
+
+        if let Some(path) = self.current_chunk_path.lock().unwrap().take() {
+            self.completed_chunks.lock().unwrap().push(path);
+        }
+
+        *self.chunk_records.lock().unwrap() = 0;
+        *self.chunk_bytes.lock().unwrap() = 0;
+
+        Ok(())
+    }
+
+    fn ensure_writer(&mut self) -> Result<()> {
+        let mut writer_guard = self.writer.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
+
+        if writer_guard.is_none() {
+            fs::create_dir_all(&self.base_dir)?;
+            let chunk_path = self.generate_chunk_path();
+            let file = File::create(&chunk_path)?;
+            let props = WriterProperties::builder()
+                .set_compression(self.compression)
+                .build();
+            let writer = ArrowWriter::try_new(file, self.schema.clone(), Some(props))?;
+            *writer_guard = Some(writer);
+            *self.current_chunk_path.lock().unwrap() = Some(chunk_path);
+        }
+
+        Ok(())
     }
 }
 
 impl StorageBackend for ParquetBackend {
-    /// Writes a batch of records to the Parquet file.
-    ///
-    /// On first call, creates the output file and initializes the writer.
-    /// Subsequent calls append to the same file.
-    ///
-    /// # Arguments
-    ///
-    /// * `records` - Slice of ResultRecords to write
-    ///
-    /// # Errors
-    ///
-    /// Returns `StorageError::Io` if file creation fails, or
-    /// `StorageError::Parquet`/`StorageError::Arrow` if writing fails.
     fn write_batch(&mut self, records: &[ResultRecord<'_>]) -> Result<()> {
         if records.is_empty() {
             return Ok(());
         }
 
-        let batch = records_to_batch(records)?;
-        let mut guard = self
-            .writer
-            .lock()
-            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
-
-        if guard.is_none() {
-            let file = File::create(&self.path)?;
-            let props = WriterProperties::builder()
-                .set_compression(self.compression)
-                .build();
-            let writer = ArrowWriter::try_new(file, self.schema.clone(), Some(props))?;
-            *guard = Some(writer);
+        if self.should_rotate() {
+            self.rotate_chunk()?;
         }
 
-        guard
-            .as_mut()
-            .ok_or(StorageError::NotInitialized)?
-            .write(&batch)?;
+        self.ensure_writer()?;
+
+        let batch = records_to_batch(records)?;
+        let batch_bytes = batch.get_array_memory_size() as u64;
+
+        {
+            let mut writer_guard = self.writer.lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
+            writer_guard
+                .as_mut()
+                .ok_or(StorageError::NotInitialized)?
+                .write(&batch)?;
+        }
+
+        *self.chunk_records.lock().unwrap() += records.len() as u64;
+        *self.chunk_bytes.lock().unwrap() += batch_bytes;
 
         Ok(())
     }
 
-    /// Finalizes the Parquet file and returns the output path.
-    ///
-    /// Closes the writer, writing the file footer. After this call,
-    /// the backend cannot be used for further writes.
-    ///
-    /// If no data was written, returns the path without creating a file.
-    ///
-    /// # Returns
-    ///
-    /// The path to the written Parquet file.
-    ///
-    /// # Errors
-    ///
-    /// Returns `StorageError::Parquet` if closing the writer fails.
-    fn flush(&mut self) -> Result<PathBuf> {
-        let mut guard = self
-            .writer
-            .lock()
+    fn flush(&mut self) -> Result<Vec<PathBuf>> {
+        let mut writer_guard = self.writer.lock()
             .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
-        if let Some(writer) = guard.take() {
+
+        if let Some(writer) = writer_guard.take() {
             writer.close()?;
         }
-        Ok(self.path.clone())
+
+        if let Some(path) = self.current_chunk_path.lock().unwrap().take() {
+            self.completed_chunks.lock().unwrap().push(path);
+        }
+
+        Ok(self.completed_chunks.lock().unwrap().clone())
     }
 
-    /// Returns the Arrow schema used for this backend.
     fn schema(&self) -> &Schema {
         &self.schema
+    }
+}
+
+impl Drop for ParquetBackend {
+    fn drop(&mut self) {
+        let has_unflushed = self.writer.lock()
+            .map(|w| w.is_some())
+            .unwrap_or(false);
+
+        if has_unflushed {
+            eprintln!(
+                "Warning: ParquetBackend dropped with unflushed data. Call flush() before dropping."
+            );
+        }
     }
 }
 
@@ -211,14 +252,14 @@ mod tests {
 
     #[test]
     fn new_creates_backend() {
-        let backend = ParquetBackend::new("test.parquet");
-        assert_eq!(backend.path(), &PathBuf::from("test.parquet"));
+        let backend = ParquetBackend::new("results");
+        assert_eq!(backend.base_dir(), &PathBuf::from("results"));
         assert!(backend.writer.lock().unwrap().is_none());
     }
 
     #[test]
     fn schema_returns_result_schema() {
-        let backend = ParquetBackend::new("test.parquet");
+        let backend = ParquetBackend::new("results");
         let schema = backend.schema();
         assert_eq!(schema.fields().len(), 19);
         assert_eq!(schema.field(0).name(), "source");
@@ -226,25 +267,52 @@ mod tests {
 
     #[test]
     fn with_compression_sets_compression() {
-        let backend = ParquetBackend::new("test.parquet").with_compression(Compression::LZ4);
+        let backend = ParquetBackend::new("results").with_compression(Compression::LZ4);
         assert!(matches!(backend.compression(), Compression::LZ4));
 
-        let backend_zstd = ParquetBackend::new("test.parquet")
+        let backend_zstd = ParquetBackend::new("results")
             .with_compression(Compression::ZSTD(ZstdLevel::try_new(3).unwrap()));
         assert!(matches!(backend_zstd.compression(), Compression::ZSTD(_)));
     }
 
     #[test]
     fn default_compression_is_zstd() {
-        let backend = ParquetBackend::new("test.parquet");
+        let backend = ParquetBackend::new("results");
         assert!(matches!(backend.compression(), Compression::ZSTD(_)));
+    }
+
+    #[test]
+    fn with_chunk_records_sets_threshold() {
+        let backend = ParquetBackend::new("results").with_chunk_records(500_000);
+        assert_eq!(backend.max_chunk_records, Some(500_000));
+    }
+
+    #[test]
+    fn with_chunk_bytes_sets_threshold() {
+        let backend = ParquetBackend::new("results").with_chunk_bytes(50 * 1024 * 1024);
+        assert_eq!(backend.max_chunk_bytes, Some(50 * 1024 * 1024));
+    }
+
+    #[test]
+    fn without_chunking_disables_thresholds() {
+        let backend = ParquetBackend::new("results").without_chunking();
+        assert_eq!(backend.max_chunk_records, None);
+        assert_eq!(backend.max_chunk_bytes, None);
+    }
+
+    #[test]
+    fn zero_threshold_disables_chunking() {
+        let backend = ParquetBackend::new("results")
+            .with_chunk_records(0)
+            .with_chunk_bytes(0);
+        assert_eq!(backend.max_chunk_records, None);
+        assert_eq!(backend.max_chunk_bytes, None);
     }
 
     #[test]
     fn write_empty_batch_succeeds() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("empty.parquet");
-        let mut backend = ParquetBackend::new(&path);
+        let mut backend = ParquetBackend::new(dir.path());
 
         let result = backend.write_batch(&[]);
         assert!(result.is_ok());
@@ -254,8 +322,7 @@ mod tests {
     #[test]
     fn write_single_record() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("single.parquet");
-        let mut backend = ParquetBackend::new(&path);
+        let mut backend = ParquetBackend::new(dir.path());
 
         let raw = [1u8; 32];
         let record = make_test_record(&raw, "test_source", &[], &[], &[], None);
@@ -263,16 +330,16 @@ mod tests {
         backend.write_batch(&[record]).unwrap();
         assert!(backend.writer.lock().unwrap().is_some());
 
-        let result_path = backend.flush().unwrap();
-        assert_eq!(result_path, path);
-        assert!(path.exists());
+        let paths = backend.flush().unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].exists());
+        assert!(paths[0].to_string_lossy().contains("_chunk_0001.parquet"));
     }
 
     #[test]
     fn write_multiple_batches() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("multi.parquet");
-        let mut backend = ParquetBackend::new(&path);
+        let mut backend = ParquetBackend::new(dir.path());
 
         let raw1 = [1u8; 32];
         let raw2 = [2u8; 32];
@@ -285,40 +352,98 @@ mod tests {
         backend.write_batch(&[record1]).unwrap();
         backend.write_batch(&[record2, record3]).unwrap();
 
-        let result_path = backend.flush().unwrap();
-        assert!(result_path.exists());
+        let paths = backend.flush().unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].exists());
     }
 
     #[test]
-    fn flush_returns_path() {
+    fn flush_returns_paths() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("flush_test.parquet");
-        let mut backend = ParquetBackend::new(&path);
+        let mut backend = ParquetBackend::new(dir.path());
 
         let raw = [1u8; 32];
         let record = make_test_record(&raw, "test", &[], &[], &[], None);
         backend.write_batch(&[record]).unwrap();
 
-        let result_path = backend.flush().unwrap();
-        assert_eq!(result_path, path);
+        let paths = backend.flush().unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].exists());
     }
 
     #[test]
-    fn flush_without_write_returns_path() {
+    fn flush_without_write_returns_empty() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("no_write.parquet");
-        let mut backend = ParquetBackend::new(&path);
+        let mut backend = ParquetBackend::new(dir.path());
 
-        let result_path = backend.flush().unwrap();
-        assert_eq!(result_path, path);
-        assert!(!path.exists());
+        let paths = backend.flush().unwrap();
+        assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn chunk_rotation_by_records() {
+        let dir = tempdir().unwrap();
+        let mut backend = ParquetBackend::new(dir.path())
+            .with_chunk_records(2)
+            .with_chunk_bytes(0);
+
+        let raw = [1u8; 32];
+        for i in 0..5 {
+            let source: &'static str = Box::leak(format!("source_{}", i).into_boxed_str());
+            let record = make_test_record(&raw, source, &[], &[], &[], None);
+            backend.write_batch(&[record]).unwrap();
+        }
+
+        let paths = backend.flush().unwrap();
+        assert_eq!(paths.len(), 3);
+        assert!(paths[0].to_string_lossy().contains("_chunk_0001.parquet"));
+        assert!(paths[1].to_string_lossy().contains("_chunk_0002.parquet"));
+        assert!(paths[2].to_string_lossy().contains("_chunk_0003.parquet"));
+    }
+
+    #[test]
+    fn chunk_rotation_by_bytes() {
+        let dir = tempdir().unwrap();
+        let mut backend = ParquetBackend::new(dir.path())
+            .with_chunk_records(0)
+            .with_chunk_bytes(1000);
+
+        let raw = [0xab_u8; 32];
+        for i in 0..10 {
+            let source: &'static str = Box::leak(format!("source_{}", i).into_boxed_str());
+            let record = make_test_record(&raw, source, &[], &[], &[], None);
+            backend.write_batch(&[record]).unwrap();
+        }
+
+        let paths = backend.flush().unwrap();
+        assert!(paths.len() >= 2, "Expected multiple chunks, got {}", paths.len());
+        for path in &paths {
+            assert!(path.exists());
+        }
+    }
+
+    #[test]
+    fn chunk_paths_returns_completed_chunks() {
+        let dir = tempdir().unwrap();
+        let mut backend = ParquetBackend::new(dir.path())
+            .with_chunk_records(1)
+            .with_chunk_bytes(0);
+
+        let raw = [1u8; 32];
+        let record1 = make_test_record(&raw, "source1", &[], &[], &[], None);
+        let record2 = make_test_record(&raw, "source2", &[], &[], &[], None);
+
+        backend.write_batch(&[record1]).unwrap();
+        assert_eq!(backend.chunk_paths().len(), 0);
+
+        backend.write_batch(&[record2]).unwrap();
+        assert_eq!(backend.chunk_paths().len(), 1);
     }
 
     #[test]
     fn write_and_read_parquet_roundtrip() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("roundtrip.parquet");
-        let mut backend = ParquetBackend::new(&path);
+        let mut backend = ParquetBackend::new(dir.path());
 
         let raw1 = [0xab_u8; 32];
         let raw2 = [0xcd_u8; 32];
@@ -365,9 +490,10 @@ mod tests {
         let record2 = make_test_record(&raw2, "passphrase2", &[], &[], &[], None);
 
         backend.write_batch(&[record1, record2]).unwrap();
-        let output_path = backend.flush().unwrap();
+        let paths = backend.flush().unwrap();
+        assert_eq!(paths.len(), 1);
 
-        let file = fs::File::open(&output_path).unwrap();
+        let file = fs::File::open(&paths[0]).unwrap();
         let reader = ParquetRecordBatchReader::try_new(file, 1024).unwrap();
 
         let batches: Vec<_> = reader.map(|r| r.unwrap()).collect();
@@ -422,19 +548,19 @@ mod tests {
             })
             .collect();
 
-        let path_zstd = dir.path().join("zstd.parquet");
-        let mut backend_zstd = ParquetBackend::new(&path_zstd);
+        let dir_zstd = dir.path().join("zstd");
+        let mut backend_zstd = ParquetBackend::new(&dir_zstd);
         backend_zstd.write_batch(&records).unwrap();
-        backend_zstd.flush().unwrap();
+        let paths_zstd = backend_zstd.flush().unwrap();
 
-        let path_none = dir.path().join("none.parquet");
+        let dir_none = dir.path().join("none");
         let mut backend_none =
-            ParquetBackend::new(&path_none).with_compression(Compression::UNCOMPRESSED);
+            ParquetBackend::new(&dir_none).with_compression(Compression::UNCOMPRESSED);
         backend_none.write_batch(&records).unwrap();
-        backend_none.flush().unwrap();
+        let paths_none = backend_none.flush().unwrap();
 
-        let size_zstd = fs::metadata(&path_zstd).unwrap().len();
-        let size_none = fs::metadata(&path_none).unwrap().len();
+        let size_zstd = fs::metadata(&paths_zstd[0]).unwrap().len();
+        let size_none = fs::metadata(&paths_none[0]).unwrap().len();
 
         assert!(
             size_zstd < size_none,
@@ -442,5 +568,33 @@ mod tests {
             size_zstd,
             size_none
         );
+    }
+
+    #[test]
+    fn read_all_chunks_integration() {
+        let dir = tempdir().unwrap();
+        let mut backend = ParquetBackend::new(dir.path())
+            .with_chunk_records(2)
+            .with_chunk_bytes(0);
+
+        let raw = [1u8; 32];
+        for i in 0..6 {
+            let source: &'static str = Box::leak(format!("source_{}", i).into_boxed_str());
+            let record = make_test_record(&raw, source, &[], &[], &[], None);
+            backend.write_batch(&[record]).unwrap();
+        }
+
+        let paths = backend.flush().unwrap();
+        assert_eq!(paths.len(), 3);
+
+        let mut total_rows = 0;
+        for path in &paths {
+            let file = fs::File::open(path).unwrap();
+            let reader = ParquetRecordBatchReader::try_new(file, 1024).unwrap();
+            for batch in reader {
+                total_rows += batch.unwrap().num_rows();
+            }
+        }
+        assert_eq!(total_rows, 6);
     }
 }
