@@ -124,7 +124,8 @@ pub type Result<T> = std::result::Result<T, StorageError>;
 pub trait StorageBackend: Send + Sync {
     fn write_batch(&mut self, records: &[ResultRecord<'_>]) -> Result<()>;
 
-    fn flush(&mut self) -> Result<PathBuf>;
+    /// Returns all written file paths. For chunked backends, includes all chunks.
+    fn flush(&mut self) -> Result<Vec<PathBuf>>;
 
     fn schema(&self) -> &Schema;
 }
