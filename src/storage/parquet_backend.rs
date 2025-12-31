@@ -112,7 +112,10 @@ impl StorageBackend for ParquetBackend {
         }
 
         let batch = records_to_batch(records)?;
-        let mut guard = self.writer.lock().unwrap();
+        let mut guard = self
+            .writer
+            .lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
 
         if guard.is_none() {
             let file = File::create(&self.path)?;
@@ -146,7 +149,10 @@ impl StorageBackend for ParquetBackend {
     ///
     /// Returns `StorageError::Parquet` if closing the writer fails.
     fn flush(&mut self) -> Result<PathBuf> {
-        let mut guard = self.writer.lock().unwrap();
+        let mut guard = self
+            .writer
+            .lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?;
         if let Some(writer) = guard.take() {
             writer.close()?;
         }
