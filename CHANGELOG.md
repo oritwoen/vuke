@@ -1,3 +1,9 @@
+## [0.7.0] - 2025-12-31
+
+### 🚀 Features
+
+- *(gpu)* Add wgpu-based GPU acceleration (#30)
+- *(analyze)* Add SHA256 chain analyzer (#31)
 ## [0.6.0] - 2025-12-22
 
 ### 🚀 Features
@@ -10,6 +16,7 @@
 ### ⚙️ Miscellaneous Tasks
 
 - Add CodSpeed performance benchmarking (#23)
+- *(release)* V0.6.0
 ## [0.5.0] - 2025-12-22
 
 ### 🚀 Features
