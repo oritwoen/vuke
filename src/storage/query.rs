@@ -143,6 +143,10 @@ pub struct QueryExecutor {
     view_created: bool,
 }
 
+fn escape_sql_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
 impl QueryExecutor {
     pub fn new(storage_path: impl AsRef<Path>) -> Result<Self> {
         let storage_path = storage_path.as_ref().to_string_lossy().to_string();
@@ -160,7 +164,7 @@ impl QueryExecutor {
     }
 
     fn try_create_view(&mut self) -> Result<()> {
-        let glob_pattern = format!("{}/**/*.parquet", self.storage_path);
+        let glob_pattern = format!("{}/**/*.parquet", escape_sql_string(&self.storage_path));
 
         let create_view_sql = format!(
             "CREATE OR REPLACE VIEW results AS SELECT * FROM read_parquet('{}', hive_partitioning=true)",
@@ -254,7 +258,7 @@ impl QueryExecutor {
     }
 
     pub fn discovered_files(&self) -> Result<Vec<String>> {
-        let glob_pattern = format!("{}/**/*.parquet", self.storage_path);
+        let glob_pattern = format!("{}/**/*.parquet", escape_sql_string(&self.storage_path));
         let sql = format!("SELECT file FROM glob('{}')", glob_pattern);
 
         let result = self.query_arrow(&sql)?;
