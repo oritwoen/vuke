@@ -6,7 +6,9 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use vuke::analyze::{Analyzer, AnalyzerType, KeyMetadata, format_results, format_results_json, parse_private_key};
+use vuke::analyze::{
+    format_results, format_results_json, parse_private_key, Analyzer, AnalyzerType, KeyMetadata,
+};
 use vuke::derive::KeyDeriver;
 use vuke::matcher::Matcher;
 use vuke::network::parse_network;
@@ -20,6 +22,25 @@ fn parse_analyzer_type(s: &str) -> Result<AnalyzerType, String> {
 
 fn parse_transform_type(s: &str) -> Result<TransformType, String> {
     TransformType::from_str(s)
+}
+
+fn parse_byte_size(s: &str) -> Result<u64, String> {
+    let s = s.trim().to_uppercase();
+    if let Some(num) = s.strip_suffix('G') {
+        num.parse::<u64>()
+            .map(|n| n * 1024 * 1024 * 1024)
+            .map_err(|e| e.to_string())
+    } else if let Some(num) = s.strip_suffix('M') {
+        num.parse::<u64>()
+            .map(|n| n * 1024 * 1024)
+            .map_err(|e| e.to_string())
+    } else if let Some(num) = s.strip_suffix('K') {
+        num.parse::<u64>()
+            .map(|n| n * 1024)
+            .map_err(|e| e.to_string())
+    } else {
+        s.parse::<u64>().map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Parser)]
@@ -58,6 +79,18 @@ enum Command {
         /// Output file (default: stdout)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Storage directory for Parquet output (requires 'storage' feature)
+        #[arg(long)]
+        storage: Option<PathBuf>,
+
+        /// Rotate storage chunk after N records (default: 1000000)
+        #[arg(long, default_value = "1000000")]
+        chunk_records: u64,
+
+        /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
+        #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
+        chunk_bytes: u64,
     },
 
     /// Scan for specific addresses
@@ -80,6 +113,18 @@ enum Command {
         /// Output file (default: stdout)
         #[arg(short, long)]
         output: Option<PathBuf>,
+
+        /// Storage directory for Parquet output (requires 'storage' feature)
+        #[arg(long)]
+        storage: Option<PathBuf>,
+
+        /// Rotate storage chunk after N records (default: 1000000)
+        #[arg(long, default_value = "1000000")]
+        chunk_records: u64,
+
+        /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
+        #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
+        chunk_bytes: u64,
     },
 
     /// Generate single key from passphrase
@@ -196,17 +241,21 @@ fn main() -> Result<()> {
             network,
             verbose,
             output,
+            storage,
+            chunk_records,
+            chunk_bytes,
         } => {
             let _network = parse_network(&network);
 
-            let out: Box<dyn Output> = match (output, verbose) {
-                (Some(path), true) => Box::new(ConsoleOutput::to_file_verbose(&path)?),
-                (Some(path), false) => Box::new(ConsoleOutput::to_file(&path)?),
-                (None, true) => Box::new(ConsoleOutput::verbose()),
-                (None, false) => Box::new(ConsoleOutput::new()),
-            };
-
-            run_generate(source, transform, out.as_ref())
+            run_generate(
+                source,
+                transform,
+                output,
+                verbose,
+                storage,
+                chunk_records,
+                chunk_bytes,
+            )
         }
 
         Command::Scan {
@@ -215,13 +264,18 @@ fn main() -> Result<()> {
             targets,
             network: _,
             output,
-        } => {
-            let out: Box<dyn Output> = match output {
-                Some(path) => Box::new(ConsoleOutput::to_file(&path)?),
-                None => Box::new(ConsoleOutput::new()),
-            };
-            run_scan(source, transform, targets, out.as_ref())
-        }
+            storage,
+            chunk_records,
+            chunk_bytes,
+        } => run_scan(
+            source,
+            transform,
+            targets,
+            output,
+            storage,
+            chunk_records,
+            chunk_bytes,
+        ),
 
         Command::Single {
             passphrase,
@@ -231,30 +285,108 @@ fn main() -> Result<()> {
 
         Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
 
-        Command::Analyze { key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, chain_depth, json } => {
+        Command::Analyze {
+            key,
+            fast,
+            mask,
+            cascade,
+            analyzer,
+            mnemonic,
+            mnemonic_file,
+            passphrase,
+            chain_depth,
+            json,
+        } => {
             #[cfg(feature = "gpu")]
             let use_gpu = !cli.no_gpu;
             #[cfg(not(feature = "gpu"))]
             let use_gpu = false;
 
-            run_analyze(&key, fast, mask, cascade, analyzer, mnemonic, mnemonic_file, passphrase, chain_depth, json, use_gpu)
+            run_analyze(
+                &key,
+                fast,
+                mask,
+                cascade,
+                analyzer,
+                mnemonic,
+                mnemonic_file,
+                passphrase,
+                chain_depth,
+                json,
+                use_gpu,
+            )
         }
     }
 }
 
 // TODO: GPU for generate/scan needs Source trait redesign (rayon par_chunks vs GPU batch model)
-fn run_generate(source_cmd: SourceCommand, transforms: Vec<TransformType>, output: &dyn Output) -> Result<()> {
+fn run_generate(
+    source_cmd: SourceCommand,
+    transforms: Vec<TransformType>,
+    output_file: Option<PathBuf>,
+    verbose: bool,
+    storage_path: Option<PathBuf>,
+    chunk_records: u64,
+    chunk_bytes: u64,
+) -> Result<()> {
     let source = create_source(source_cmd)?;
-    let transforms = create_transforms(transforms);
+    let transform_instances = create_transforms(transforms.clone());
+
+    let console_out: Box<dyn Output> = match (output_file, verbose) {
+        (Some(path), true) => Box::new(ConsoleOutput::to_file_verbose(&path)?),
+        (Some(path), false) => Box::new(ConsoleOutput::to_file(&path)?),
+        (None, true) => Box::new(ConsoleOutput::verbose()),
+        (None, false) => Box::new(ConsoleOutput::new()),
+    };
+
+    #[cfg(feature = "storage")]
+    let storage_output: Option<vuke::output::StorageOutput> = if let Some(ref path) = storage_path {
+        let transform_name = transforms
+            .first()
+            .map(|t| t.create().name().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        Some(
+            vuke::output::StorageOutput::new(path, &transform_name)?
+                .with_chunk_records(chunk_records)
+                .with_chunk_bytes(chunk_bytes),
+        )
+    } else {
+        None
+    };
+
+    #[cfg(feature = "storage")]
+    let output: Box<dyn Output> = match &storage_output {
+        Some(storage) => Box::new(vuke::output::MultiOutput::new(vec![
+            console_out,
+            Box::new(storage.clone()),
+        ])),
+        None => console_out,
+    };
+
+    #[cfg(not(feature = "storage"))]
+    let output: Box<dyn Output> = {
+        if storage_path.is_some() {
+            anyhow::bail!(
+                "--storage requires the 'storage' feature. Rebuild with: cargo build --features storage"
+            );
+        }
+        let _ = (chunk_records, chunk_bytes);
+        console_out
+    };
 
     eprintln!("Generating keys...");
-    let stats = source.process(&transforms, None, output)?;
+    let stats = source.process(&transform_instances, None, output.as_ref())?;
     output.flush()?;
 
     eprintln!(
         "Done. Inputs: {}, Keys: {}, Matches: {}",
         stats.inputs_processed, stats.keys_generated, stats.matches_found
     );
+
+    #[cfg(feature = "storage")]
+    if let Some(storage) = storage_output {
+        print_storage_summary(storage)?;
+    }
 
     Ok(())
 }
@@ -263,23 +395,71 @@ fn run_scan(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
     targets: PathBuf,
-    output: &dyn Output,
+    output_file: Option<PathBuf>,
+    storage_path: Option<PathBuf>,
+    chunk_records: u64,
+    chunk_bytes: u64,
 ) -> Result<()> {
     eprintln!("Loading targets from {:?}...", targets);
     let matcher = Matcher::load(&targets)?;
     eprintln!("Loaded {} targets.", matcher.count());
 
     let source = create_source(source_cmd)?;
-    let transforms = create_transforms(transforms);
+    let transform_instances = create_transforms(transforms.clone());
+
+    let console_out: Box<dyn Output> = match output_file {
+        Some(path) => Box::new(ConsoleOutput::to_file(&path)?),
+        None => Box::new(ConsoleOutput::new()),
+    };
+
+    #[cfg(feature = "storage")]
+    let storage_output: Option<vuke::output::StorageOutput> = if let Some(ref path) = storage_path {
+        let transform_name = transforms
+            .first()
+            .map(|t| t.create().name().to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        Some(
+            vuke::output::StorageOutput::new(path, &transform_name)?
+                .with_chunk_records(chunk_records)
+                .with_chunk_bytes(chunk_bytes),
+        )
+    } else {
+        None
+    };
+
+    #[cfg(feature = "storage")]
+    let output: Box<dyn Output> = match &storage_output {
+        Some(storage) => Box::new(vuke::output::MultiOutput::new(vec![
+            console_out,
+            Box::new(storage.clone()),
+        ])),
+        None => console_out,
+    };
+
+    #[cfg(not(feature = "storage"))]
+    let output: Box<dyn Output> = {
+        if storage_path.is_some() {
+            anyhow::bail!(
+                "--storage requires the 'storage' feature. Rebuild with: cargo build --features storage"
+            );
+        }
+        let _ = (chunk_records, chunk_bytes);
+        console_out
+    };
 
     eprintln!("Scanning...");
-    let stats = source.process(&transforms, Some(&matcher), output)?;
+    let stats = source.process(&transform_instances, Some(&matcher), output.as_ref())?;
     output.flush()?;
 
     eprintln!(
         "Done. Inputs: {}, Keys: {}, Matches: {}",
         stats.inputs_processed, stats.keys_generated, stats.matches_found
     );
+
+    #[cfg(feature = "storage")]
+    if let Some(storage) = storage_output {
+        print_storage_summary(storage)?;
+    }
 
     Ok(())
 }
@@ -324,20 +504,66 @@ fn run_single(passphrase: &str, transform_type: TransformType, network: &str) ->
     Ok(())
 }
 
+#[cfg(feature = "storage")]
+fn print_storage_summary(storage: vuke::output::StorageOutput) -> Result<()> {
+    let summary = storage.finish()?;
+    if summary.paths.is_empty() {
+        return Ok(());
+    }
+
+    let mut total_bytes: u64 = 0;
+    let mut file_info = Vec::new();
+
+    for path in &summary.paths {
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        total_bytes += size;
+        file_info.push((path.clone(), size));
+    }
+
+    eprintln!(
+        "\nStorage: {} files written ({} total)",
+        summary.paths.len(),
+        format_bytes(total_bytes)
+    );
+
+    for (path, size) in file_info {
+        eprintln!("  {} ({})", path.display(), format_bytes(size));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "storage")]
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 fn create_source(cmd: SourceCommand) -> Result<Box<dyn Source>> {
     match cmd {
-        SourceCommand::Range { start, end } => {
-            Ok(Box::new(RangeSource::new(start, end)))
-        }
-        SourceCommand::Wordlist { file } => {
-            Ok(Box::new(WordlistSource::from_file(&file)?))
-        }
-        SourceCommand::Timestamps { start, end, microseconds } => {
-            Ok(Box::new(TimestampSource::from_dates(&start, &end, microseconds)?))
-        }
-        SourceCommand::Stdin => {
-            Ok(Box::new(StdinSource::new()))
-        }
+        SourceCommand::Range { start, end } => Ok(Box::new(RangeSource::new(start, end))),
+        SourceCommand::Wordlist { file } => Ok(Box::new(WordlistSource::from_file(&file)?)),
+        SourceCommand::Timestamps {
+            start,
+            end,
+            microseconds,
+        } => Ok(Box::new(TimestampSource::from_dates(
+            &start,
+            &end,
+            microseconds,
+        )?)),
+        SourceCommand::Stdin => Ok(Box::new(StdinSource::new())),
     }
 }
 
@@ -359,7 +585,7 @@ fn run_analyze(
     use_gpu: bool,
 ) -> Result<()> {
     use indicatif::ProgressBar;
-    use vuke::analyze::{AnalysisConfig, parse_cascade};
+    use vuke::analyze::{parse_cascade, AnalysisConfig};
 
     let cascade_targets = match cascade_input {
         Some(ref input) => Some(parse_cascade(input)?),
@@ -379,18 +605,28 @@ fn run_analyze(
         }
     }
 
-    let config = AnalysisConfig { mask_bits, cascade_targets };
+    let config = AnalysisConfig {
+        mask_bits,
+        cascade_targets,
+    };
 
     let analyzer_types = match analyzer_types {
         Some(mut types) => {
             for t in &mut types {
                 match t {
-                    AnalyzerType::MultibitHd { mnemonic: ref mut m, mnemonic_file: ref mut f, passphrase: ref mut p } => {
+                    AnalyzerType::MultibitHd {
+                        mnemonic: ref mut m,
+                        mnemonic_file: ref mut f,
+                        passphrase: ref mut p,
+                    } => {
                         *m = mnemonic.clone();
                         *f = mnemonic_file.clone();
                         *p = passphrase.clone();
                     }
-                    AnalyzerType::Sha256Chain { chain_depth: ref mut d, .. } => {
+                    AnalyzerType::Sha256Chain {
+                        chain_depth: ref mut d,
+                        ..
+                    } => {
                         *d = chain_depth;
                     }
                     _ => {}
@@ -402,10 +638,8 @@ fn run_analyze(
         None => AnalyzerType::all(),
     };
 
-    let analyzers: Vec<Box<dyn Analyzer>> = analyzer_types
-        .into_iter()
-        .map(|t| t.create())
-        .collect();
+    let analyzers: Vec<Box<dyn Analyzer>> =
+        analyzer_types.into_iter().map(|t| t.create()).collect();
 
     // Initialize GPU context if requested
     #[cfg(feature = "gpu")]
