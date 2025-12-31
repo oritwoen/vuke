@@ -88,7 +88,11 @@ pub fn result_schema() -> Schema {
         ),
         Field::new(fields::MATCHED_TARGET, DataType::Utf8, true),
         // Private key
-        Field::new(fields::PRIVATE_KEY_RAW, DataType::FixedSizeBinary(32), false),
+        Field::new(
+            fields::PRIVATE_KEY_RAW,
+            DataType::FixedSizeBinary(32),
+            false,
+        ),
         Field::new(fields::PRIVATE_KEY_HEX, DataType::Utf8, false),
         Field::new(fields::PRIVATE_KEY_DECIMAL, DataType::Utf8, false),
         Field::new(fields::PRIVATE_KEY_BINARY, DataType::Utf8, false),
@@ -165,10 +169,7 @@ pub fn records_to_batch(records: &[ResultRecord<'_>]) -> Result<RecordBatch, Arr
         .with_timezone("UTC"),
     );
     let matched_target_array: ArrayRef = Arc::new(StringArray::from(
-        records
-            .iter()
-            .map(|r| r.matched_target)
-            .collect::<Vec<_>>(),
+        records.iter().map(|r| r.matched_target).collect::<Vec<_>>(),
     ));
 
     // Private key arrays
@@ -328,10 +329,7 @@ mod tests {
             DataType::Timestamp(TimeUnit::Millisecond, Some(_))
         ));
         assert_eq!(schema.field(4).data_type(), &DataType::Utf8);
-        assert_eq!(
-            schema.field(5).data_type(),
-            &DataType::FixedSizeBinary(32)
-        );
+        assert_eq!(schema.field(5).data_type(), &DataType::FixedSizeBinary(32));
         assert_eq!(schema.field(6).data_type(), &DataType::Utf8);
         assert_eq!(schema.field(7).data_type(), &DataType::Utf8);
         assert_eq!(schema.field(8).data_type(), &DataType::Utf8);
@@ -350,12 +348,20 @@ mod tests {
 
         let non_nullable = [0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11];
         for i in non_nullable {
-            assert!(!schema.field(i).is_nullable(), "field {} should be non-nullable", i);
+            assert!(
+                !schema.field(i).is_nullable(),
+                "field {} should be non-nullable",
+                i
+            );
         }
 
         let nullable = [4, 12, 13, 14, 15, 16, 17, 18];
         for i in nullable {
-            assert!(schema.field(i).is_nullable(), "field {} should be nullable", i);
+            assert!(
+                schema.field(i).is_nullable(),
+                "field {} should be nullable",
+                i
+            );
         }
     }
 
@@ -384,7 +390,8 @@ mod tests {
             private_key: PrivateKeyRecord {
                 raw,
                 hex: "0101010101010101010101010101010101010101010101010101010101010101",
-                decimal: "454086624460063511464984254936031011189294057512315937409637584344757371137",
+                decimal:
+                    "454086624460063511464984254936031011189294057512315937409637584344757371137",
                 binary: "0000000100000001000000010000000100000001000000010000000100000001\
                          0000000100000001000000010000000100000001000000010000000100000001\
                          0000000100000001000000010000000100000001000000010000000100000001\
@@ -444,28 +451,60 @@ mod tests {
         assert_eq!(batch.num_rows(), 1);
         assert_eq!(batch.num_columns(), 19);
 
-        let source_col = batch.column(0).as_any().downcast_ref::<StringArray>().unwrap();
+        let source_col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(source_col.value(0), "test_source");
 
-        let transform_col = batch.column(1).as_any().downcast_ref::<StringArray>().unwrap();
+        let transform_col = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(transform_col.value(0), "sha256");
 
-        let chain_col = batch.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+        let chain_col = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(chain_col.value(0), "bitcoin");
 
-        let pk_raw_col = batch.column(5).as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
+        let pk_raw_col = batch
+            .column(5)
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
         assert_eq!(pk_raw_col.value(0), &[1u8; 32]);
 
-        let pk_bit_length_col = batch.column(9).as_any().downcast_ref::<UInt16Array>().unwrap();
+        let pk_bit_length_col = batch
+            .column(9)
+            .as_any()
+            .downcast_ref::<UInt16Array>()
+            .unwrap();
         assert_eq!(pk_bit_length_col.value(0), 249);
 
-        let pubkey_compressed_col = batch.column(12).as_any().downcast_ref::<StringArray>().unwrap();
+        let pubkey_compressed_col = batch
+            .column(12)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(pubkey_compressed_col.value(0), "02abc123");
 
-        let addr_p2wpkh_col = batch.column(16).as_any().downcast_ref::<StringArray>().unwrap();
+        let addr_p2wpkh_col = batch
+            .column(16)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(addr_p2wpkh_col.value(0), "bc1qtest");
 
-        let wif_compressed_col = batch.column(17).as_any().downcast_ref::<StringArray>().unwrap();
+        let wif_compressed_col = batch
+            .column(17)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(wif_compressed_col.value(0), "L1234");
     }
 
@@ -504,13 +543,25 @@ mod tests {
         let record = make_test_record(&raw, &[], &[], &[], None);
         let batch = records_to_batch(&[record]).unwrap();
 
-        let pubkey_compressed = batch.column(12).as_any().downcast_ref::<StringArray>().unwrap();
+        let pubkey_compressed = batch
+            .column(12)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert!(pubkey_compressed.is_null(0));
 
-        let addr_p2pkh = batch.column(14).as_any().downcast_ref::<StringArray>().unwrap();
+        let addr_p2pkh = batch
+            .column(14)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert!(addr_p2pkh.is_null(0));
 
-        let wif = batch.column(17).as_any().downcast_ref::<StringArray>().unwrap();
+        let wif = batch
+            .column(17)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert!(wif.is_null(0));
     }
 

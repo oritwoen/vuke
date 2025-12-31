@@ -1,9 +1,13 @@
 //! Persistent storage backends for generated keys.
 
 mod parquet_backend;
+#[cfg(feature = "storage-query")]
+mod query;
 mod schema;
 
 pub use parquet_backend::ParquetBackend;
+#[cfg(feature = "storage-query")]
+pub use query::{QueryExecutor, QueryResult, Row, Value};
 pub use schema::{fields, records_to_batch, result_schema};
 
 use std::fmt;
@@ -72,6 +76,8 @@ pub enum StorageError {
     Io(std::io::Error),
     Parquet(::parquet::errors::ParquetError),
     Arrow(arrow::error::ArrowError),
+    #[cfg(feature = "storage-query")]
+    DuckDb(duckdb::Error),
     SchemaMismatch(String),
     NotInitialized,
     Other(String),
@@ -83,6 +89,8 @@ impl fmt::Display for StorageError {
             StorageError::Io(e) => write!(f, "IO error: {}", e),
             StorageError::Parquet(e) => write!(f, "Parquet error: {}", e),
             StorageError::Arrow(e) => write!(f, "Arrow error: {}", e),
+            #[cfg(feature = "storage-query")]
+            StorageError::DuckDb(e) => write!(f, "DuckDB error: {}", e),
             StorageError::SchemaMismatch(msg) => write!(f, "Schema mismatch: {}", msg),
             StorageError::NotInitialized => write!(f, "Storage backend not initialized"),
             StorageError::Other(msg) => write!(f, "Storage error: {}", msg),
@@ -96,6 +104,8 @@ impl std::error::Error for StorageError {
             StorageError::Io(e) => Some(e),
             StorageError::Parquet(e) => Some(e),
             StorageError::Arrow(e) => Some(e),
+            #[cfg(feature = "storage-query")]
+            StorageError::DuckDb(e) => Some(e),
             _ => None,
         }
     }
@@ -116,6 +126,13 @@ impl From<::parquet::errors::ParquetError> for StorageError {
 impl From<arrow::error::ArrowError> for StorageError {
     fn from(err: arrow::error::ArrowError) -> Self {
         StorageError::Arrow(err)
+    }
+}
+
+#[cfg(feature = "storage-query")]
+impl From<duckdb::Error> for StorageError {
+    fn from(err: duckdb::Error) -> Self {
+        StorageError::DuckDb(err)
     }
 }
 
@@ -192,18 +209,31 @@ mod tests {
         };
 
         let public_keys = [
-            PublicKeyRecord { format: "compressed", value: "02abc" },
-            PublicKeyRecord { format: "uncompressed", value: "04abc" },
+            PublicKeyRecord {
+                format: "compressed",
+                value: "02abc",
+            },
+            PublicKeyRecord {
+                format: "uncompressed",
+                value: "04abc",
+            },
         ];
 
         let addresses = [
-            AddressRecord { address_type: "p2pkh", address: "1abc" },
-            AddressRecord { address_type: "p2wpkh", address: "bc1q" },
+            AddressRecord {
+                address_type: "p2pkh",
+                address: "1abc",
+            },
+            AddressRecord {
+                address_type: "p2wpkh",
+                address: "bc1q",
+            },
         ];
 
-        let export_formats = [
-            ExportFormatRecord { format: "wif_compressed", value: "L1" },
-        ];
+        let export_formats = [ExportFormatRecord {
+            format: "wif_compressed",
+            value: "L1",
+        }];
 
         let record = ResultRecord {
             source: "test_seed",
@@ -287,10 +317,11 @@ mod tests {
 
     #[test]
     fn private_key_debug_redacts_sensitive_data() {
-        let raw = [0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00,
-                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01];
+        let raw = [
+            0xde, 0xad, 0xbe, 0xef, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01,
+        ];
         let record = PrivateKeyRecord {
             raw: &raw,
             hex: "deadbeef00000001",
