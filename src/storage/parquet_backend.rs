@@ -112,12 +112,19 @@ impl ParquetBackend {
             writer.close()?;
         }
 
-        if let Some(path) = self.current_chunk_path.lock().unwrap().take() {
-            self.completed_chunks.lock().unwrap().push(path);
+        if let Some(path) = self.current_chunk_path.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
+            .take()
+        {
+            self.completed_chunks.lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
+                .push(path);
         }
 
-        *self.chunk_records.lock().unwrap() = 0;
-        *self.chunk_bytes.lock().unwrap() = 0;
+        *self.chunk_records.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? = 0;
+        *self.chunk_bytes.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? = 0;
 
         Ok(())
     }
@@ -135,7 +142,8 @@ impl ParquetBackend {
                 .build();
             let writer = ArrowWriter::try_new(file, self.schema.clone(), Some(props))?;
             *writer_guard = Some(writer);
-            *self.current_chunk_path.lock().unwrap() = Some(chunk_path);
+            *self.current_chunk_path.lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? = Some(chunk_path);
         }
 
         Ok(())
@@ -166,8 +174,10 @@ impl StorageBackend for ParquetBackend {
                 .write(&batch)?;
         }
 
-        *self.chunk_records.lock().unwrap() += records.len() as u64;
-        *self.chunk_bytes.lock().unwrap() += batch_bytes;
+        *self.chunk_records.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? += records.len() as u64;
+        *self.chunk_bytes.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))? += batch_bytes;
 
         Ok(())
     }
@@ -180,11 +190,18 @@ impl StorageBackend for ParquetBackend {
             writer.close()?;
         }
 
-        if let Some(path) = self.current_chunk_path.lock().unwrap().take() {
-            self.completed_chunks.lock().unwrap().push(path);
+        if let Some(path) = self.current_chunk_path.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
+            .take()
+        {
+            self.completed_chunks.lock()
+                .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
+                .push(path);
         }
 
-        Ok(self.completed_chunks.lock().unwrap().clone())
+        Ok(self.completed_chunks.lock()
+            .map_err(|e| StorageError::Other(format!("Mutex poisoned: {}", e)))?
+            .clone())
     }
 
     fn schema(&self) -> &Schema {
