@@ -1,7 +1,9 @@
 //! Persistent storage backends for generated keys.
 
+mod parquet_backend;
 mod schema;
 
+pub use parquet_backend::ParquetBackend;
 pub use schema::{fields, records_to_batch, result_schema};
 
 use std::fmt;
@@ -68,7 +70,7 @@ pub struct ResultRecord<'a> {
 #[derive(Debug)]
 pub enum StorageError {
     Io(std::io::Error),
-    Parquet(parquet::errors::ParquetError),
+    Parquet(::parquet::errors::ParquetError),
     Arrow(arrow::error::ArrowError),
     SchemaMismatch(String),
     NotInitialized,
@@ -105,8 +107,8 @@ impl From<std::io::Error> for StorageError {
     }
 }
 
-impl From<parquet::errors::ParquetError> for StorageError {
-    fn from(err: parquet::errors::ParquetError) -> Self {
+impl From<::parquet::errors::ParquetError> for StorageError {
+    fn from(err: ::parquet::errors::ParquetError) -> Self {
         StorageError::Parquet(err)
     }
 }

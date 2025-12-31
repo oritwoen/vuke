@@ -6,10 +6,9 @@ Persistent storage backends for TB-scale result persistence using columnar forma
 
 ```
 storage/
-├── mod.rs           # StorageBackend trait, record types, errors
-├── schema.rs        # Arrow schema definition + records_to_batch conversion (#34)
-└── (future)
-    └── parquet.rs   # ParquetBackend implementation (#35)
+├── mod.rs              # StorageBackend trait, record types, errors
+├── schema.rs           # Arrow schema definition + records_to_batch conversion (#34)
+└── parquet_backend.rs  # ParquetBackend implementation (#35)
 ```
 
 ## WHERE TO LOOK
@@ -89,7 +88,7 @@ pub trait StorageBackend: Send + Sync {
 - #25 - Parent: TB-scale Parquet-based storage
 - #33 - StorageBackend trait definition (done)
 - #34 - Arrow schema for results (done)
-- #35 - ParquetBackend implementation
+- #35 - ParquetBackend implementation (done)
 - #36 - Automatic chunk rotation
 - #37 - Basic partitioning (transform/date)
 - #38 - CLI `--storage` flag integration
