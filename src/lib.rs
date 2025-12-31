@@ -21,6 +21,9 @@ pub mod network;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 
+#[cfg(feature = "storage")]
+pub mod storage;
+
 pub use transform::Key;
 
 /// Default progress bar style for CLI operations.
