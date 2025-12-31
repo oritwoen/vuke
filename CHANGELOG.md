@@ -1,9 +1,28 @@
+## [0.8.0] - 2025-12-31
+
+### 🚀 Features
+
+- *(storage)* Add StorageBackend trait (#41)
+- *(storage)* Add Arrow schema for results (#42)
+- *(storage)* Implement ParquetBackend (#43)
+- *(storage)* Add automatic chunk rotation (#44)
+- *(storage)* Add Hive-style partitioning (transform/date) (#46)
+- *(storage)* Add --storage CLI flag for Parquet output (#47)
+
+### 📚 Documentation
+
+- Add AGENTS.md knowledge base files
+- Refresh AGENTS.md knowledge base
 ## [0.7.0] - 2025-12-31
 
 ### 🚀 Features
 
 - *(gpu)* Add wgpu-based GPU acceleration (#30)
 - *(analyze)* Add SHA256 chain analyzer (#31)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.7.0
 ## [0.6.0] - 2025-12-22
 
 ### 🚀 Features
