@@ -2,11 +2,15 @@
 
 mod console;
 mod multi;
+#[cfg(feature = "storage-query")]
+mod query_format;
 #[cfg(feature = "storage")]
 mod storage;
 
 pub use console::ConsoleOutput;
 pub use multi::MultiOutput;
+#[cfg(feature = "storage-query")]
+pub use query_format::{format_csv, format_json, format_schema, format_table, OutputFormat};
 #[cfg(feature = "storage")]
 pub use storage::{StorageOutput, StorageSummary};
 

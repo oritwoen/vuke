@@ -13,7 +13,7 @@ categories = ["cryptography", "command-line-utilities"]
 default = []
 gpu = ["wgpu", "pollster", "bytemuck"]
 storage = ["parquet", "arrow"]
-storage-query = ["storage", "duckdb"]
+storage-query = ["storage", "duckdb", "comfy-table"]
 
 [dependencies]
 # Core
@@ -41,11 +41,12 @@ pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1.21", features = ["derive"], optional = true }
 
 # Storage (optional)
-parquet = { version = "54", optional = true, features = ["arrow", "zstd"] }
-arrow = { version = "54", optional = true }
+parquet = { version = "56", optional = true, features = ["arrow", "zstd"] }
+arrow = { version = "56", optional = true }
 
 # Query (optional)
 duckdb = { version = "1.4", optional = true, features = ["bundled"] }
+comfy-table = { version = "7", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"

@@ -147,6 +147,47 @@ vuke generate --output results.txt --verbose range --start 1 --end 1000
 vuke scan --output hits.txt --targets addresses.txt wordlist --file passwords.txt
 ```
 
+### Persistent storage (Parquet)
+
+Store results in Parquet format for TB-scale analysis (requires `storage` feature):
+
+```bash
+# Build with storage support
+cargo build --release --features storage
+
+# Store generated keys to Parquet
+vuke generate --storage ./results --transform milksad range --start 1 --end 1000000
+
+# Configure chunk rotation
+vuke generate --storage ./results --chunk-records 500000 --chunk-bytes 50M range --start 1 --end 10000000
+```
+
+### Query stored results (SQL)
+
+Query stored Parquet files using SQL (requires `storage-query` feature):
+
+```bash
+# Build with query support
+cargo build --release --features storage-query
+
+# Count results by transform
+vuke query ./results "SELECT transform, COUNT(*) FROM results GROUP BY transform"
+
+# Find matches
+vuke query ./results "SELECT * FROM results WHERE matched_target IS NOT NULL LIMIT 10"
+
+# Export to JSON
+vuke query ./results --format json "SELECT source, wif_compressed FROM results LIMIT 100"
+
+# Export to CSV
+vuke query ./results --format csv "SELECT address_p2pkh_compressed, wif_compressed FROM results" > export.csv
+
+# Show schema
+vuke query ./results --schema
+```
+
+Output formats: `table` (default), `json`, `csv`
+
 ### Benchmark transforms
 
 ```bash

@@ -78,6 +78,10 @@ pub struct Row {
 }
 
 impl Row {
+    pub fn from_columns(columns: Vec<(String, Value)>) -> Self {
+        Self { columns }
+    }
+
     pub fn get(&self, column: &str) -> Option<&Value> {
         self.columns
             .iter()

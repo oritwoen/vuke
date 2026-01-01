@@ -193,6 +193,39 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    #[cfg(feature = "storage-query")]
+    #[command(
+        about = "Query stored results using SQL",
+        after_help = r#"EXAMPLES:
+    # Count results by transform
+    vuke query ./results "SELECT transform, COUNT(*) FROM results GROUP BY transform"
+
+    # Find matches (JSON output)
+    vuke query ./results --format json "SELECT * FROM results WHERE matched_target IS NOT NULL"
+
+    # Export to CSV
+    vuke query ./results --format csv "SELECT address_p2pkh_compressed, wif_compressed FROM results" > export.csv
+
+    # Show schema
+    vuke query ./results --schema
+"#
+    )]
+    Query {
+        /// Path to storage directory containing Parquet files
+        path: PathBuf,
+
+        /// SQL query to execute (optional if --schema is used)
+        query: Option<String>,
+
+        /// Output format: table (default), json, csv
+        #[arg(long, short = 'f', default_value = "table")]
+        format: String,
+
+        /// Show schema and exit (no query required)
+        #[arg(long)]
+        schema: bool,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -316,6 +349,14 @@ fn main() -> Result<()> {
                 use_gpu,
             )
         }
+
+        #[cfg(feature = "storage-query")]
+        Command::Query {
+            path,
+            query,
+            format,
+            schema,
+        } => run_query(path, query, format, schema),
     }
 }
 
@@ -548,6 +589,70 @@ fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{} B", bytes)
     }
+}
+
+#[cfg(feature = "storage-query")]
+fn run_query(
+    path: PathBuf,
+    query: Option<String>,
+    format: String,
+    show_schema: bool,
+) -> Result<()> {
+    use vuke::output::{format_csv, format_json, format_schema, format_table, OutputFormat};
+    use vuke::storage::QueryExecutor;
+
+    let output_format = OutputFormat::from_str(&format).map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    let executor =
+        QueryExecutor::new(&path).map_err(|e| anyhow::anyhow!("Failed to open storage: {}", e))?;
+
+    if !executor.has_data() {
+        anyhow::bail!("No Parquet files found in {:?}", path);
+    }
+
+    if show_schema {
+        return match executor.schema() {
+            Ok(Some(schema)) => {
+                print!("{}", format_schema(&schema));
+                Ok(())
+            }
+            Ok(None) => anyhow::bail!("Could not read schema"),
+            Err(e) => anyhow::bail!("Failed to read schema: {}", e),
+        };
+    }
+
+    let sql = query.ok_or_else(|| anyhow::anyhow!("Query is required (or use --schema)"))?;
+
+    let result = match executor.query_arrow(&sql) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("SQL Error: {}", e);
+            eprintln!("\nAvailable columns (use --schema for details):");
+            if let Ok(Some(schema)) = executor.schema() {
+                for field in schema.fields() {
+                    eprintln!("  - {}", field.name());
+                }
+            }
+            std::process::exit(1);
+        }
+    };
+
+    let rows = result.rows();
+    let schema = result.schema();
+
+    let output = match output_format {
+        OutputFormat::Table => format_table(&rows, schema.clone()),
+        OutputFormat::Json => format_json(&rows),
+        OutputFormat::Csv => format_csv(&rows, schema.clone()),
+    };
+
+    print!("{}", output);
+
+    if matches!(output_format, OutputFormat::Table) && !rows.is_empty() {
+        eprintln!("\n({} rows)", rows.len());
+    }
+
+    Ok(())
 }
 
 fn create_source(cmd: SourceCommand) -> Result<Box<dyn Source>> {
