@@ -14,11 +14,12 @@ default = []
 gpu = ["wgpu", "pollster", "bytemuck"]
 storage = ["parquet", "arrow"]
 storage-query = ["storage", "duckdb", "comfy-table"]
+storage-cloud = ["storage", "object_store", "tokio", "async-trait", "futures"]
 
 [dependencies]
 # Core
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 rayon = "1.10"
 indicatif = "0.17"
 hex = "0.4"
@@ -48,9 +49,17 @@ arrow = { version = "56", optional = true }
 duckdb = { version = "1.4", optional = true, features = ["bundled"] }
 comfy-table = { version = "7", optional = true }
 
+# Cloud storage (optional)
+object_store = { version = "0.11", optional = true, features = ["aws"] }
+tokio = { version = "1", optional = true, features = ["rt-multi-thread", "sync", "time"] }
+async-trait = { version = "0.1", optional = true }
+futures = { version = "0.3", optional = true }
+
 [dev-dependencies]
 tempfile = "3.10"
 criterion = { package = "codspeed-criterion-compat", version = "4.1" }
+testcontainers = "0.23"
+testcontainers-modules = { version = "0.11", features = ["minio"] }
 
 [[bin]]
 name = "vuke"
