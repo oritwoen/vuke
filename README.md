@@ -26,6 +26,7 @@ Research tool for analyzing and reproducing vulnerable Bitcoin key generation.
 - **Parallel processing** via Rayon
 - **Address matching** for scanning known targets
 - **File output** for saving results
+- **Cloud storage** - async upload to S3/R2/MinIO
 - **Pure Rust** implementation
 
 ## Why This Project?
@@ -195,6 +196,51 @@ vuke query ./results --schema
 ```
 
 Output formats: `table` (default), `json`, `csv`
+
+### Cloud upload (S3-compatible)
+
+Upload Parquet results to S3-compatible storage (requires `storage-cloud` feature):
+
+```bash
+# Build with cloud upload support
+cargo build --release --features storage-cloud
+
+# Set credentials (AWS S3)
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
+
+# Upload to AWS S3
+vuke generate --storage ./results --cloud-upload --cloud-bucket my-bucket \
+  --transform milksad range --start 1 --end 1000000
+
+# Upload to Cloudflare R2
+vuke generate --storage ./results --cloud-upload \
+  --cloud-endpoint https://account.r2.cloudflarestorage.com \
+  --cloud-bucket my-r2-bucket \
+  --transform milksad range --start 1 --end 1000000
+
+# Upload to MinIO (self-hosted)
+vuke generate --storage ./results --cloud-upload \
+  --cloud-endpoint http://localhost:9000 \
+  --cloud-bucket vuke-results \
+  --transform milksad range --start 1 --end 1000000
+
+# Delete local files after successful upload
+vuke generate --storage ./results --cloud-upload --cloud-bucket my-bucket \
+  --cloud-delete-local \
+  --transform milksad range --start 1 --end 1000000
+
+# Fail fast on upload errors (default: continue on failures)
+vuke generate --storage ./results --cloud-upload --cloud-bucket my-bucket \
+  --cloud-fail-fast \
+  --transform milksad range --start 1 --end 1000000
+```
+
+Cloud upload features:
+- Streaming multipart upload (memory-efficient for large files)
+- Automatic retry with exponential backoff (5 retries, 100ms→30s)
+- Concurrent uploads with configurable parallelism
+- Only deletes local files that were successfully uploaded
 
 ### Benchmark transforms
 
@@ -533,6 +579,17 @@ src/
 │   ├── wordlist.rs  # File-based wordlist
 │   ├── timestamps.rs # Date range → Unix timestamps
 │   └── stdin.rs     # Streaming from stdin
+├── storage/
+│   ├── mod.rs       # StorageBackend trait
+│   ├── parquet_backend.rs # Parquet file writer
+│   ├── query.rs     # DuckDB SQL executor
+│   ├── schema.rs    # Arrow schema definitions
+│   └── cloud/       # S3-compatible upload
+│       ├── mod.rs   # CloudUploader trait
+│       ├── s3.rs    # S3/R2/MinIO implementation
+│       ├── sync.rs  # Batch upload with concurrency
+│       ├── progress.rs # Upload progress tracking
+│       └── error.rs # Cloud error types
 ├── transform/
 │   ├── mod.rs       # Transform trait and types
 │   ├── input.rs     # Input value representation

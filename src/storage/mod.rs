@@ -1,10 +1,18 @@
 //! Persistent storage backends for generated keys.
 
+#[cfg(feature = "storage-cloud")]
+pub mod cloud;
 mod parquet_backend;
 #[cfg(feature = "storage-query")]
 mod query;
 mod schema;
 
+#[cfg(feature = "storage-cloud")]
+pub use cloud::{
+    sync_to_cloud_blocking, BatchUploader, CloudConfig, CloudError, CloudPath, CloudSyncManager,
+    CloudUploader, NoOpProgress, S3CloudUploader, StatsProgress, SyncResult, UploadProgress,
+    UploadStats,
+};
 pub use parquet_backend::ParquetBackend;
 #[cfg(feature = "storage-query")]
 pub use query::{QueryExecutor, QueryResult, Row, Value};

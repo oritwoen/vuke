@@ -115,6 +115,26 @@ enum Command {
         /// Zstd compression level (1-22, higher = slower but smaller)
         #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
         compression_level: i32,
+
+        /// Enable cloud upload (requires 'storage-cloud' feature)
+        #[arg(long)]
+        cloud_upload: bool,
+
+        /// S3-compatible endpoint URL (e.g., https://xxx.r2.cloudflarestorage.com)
+        #[arg(long, env = "CLOUD_ENDPOINT")]
+        cloud_endpoint: Option<String>,
+
+        /// Cloud bucket name
+        #[arg(long, env = "CLOUD_BUCKET")]
+        cloud_bucket: Option<String>,
+
+        /// Delete local files after successful cloud upload
+        #[arg(long)]
+        cloud_delete_local: bool,
+
+        /// Stop on first cloud upload failure (default: continue and report)
+        #[arg(long)]
+        cloud_fail_fast: bool,
     },
 
     /// Scan for specific addresses
@@ -157,6 +177,26 @@ enum Command {
         /// Zstd compression level (1-22, higher = slower but smaller)
         #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
         compression_level: i32,
+
+        /// Enable cloud upload (requires 'storage-cloud' feature)
+        #[arg(long)]
+        cloud_upload: bool,
+
+        /// S3-compatible endpoint URL (e.g., https://xxx.r2.cloudflarestorage.com)
+        #[arg(long, env = "CLOUD_ENDPOINT")]
+        cloud_endpoint: Option<String>,
+
+        /// Cloud bucket name
+        #[arg(long, env = "CLOUD_BUCKET")]
+        cloud_bucket: Option<String>,
+
+        /// Delete local files after successful cloud upload
+        #[arg(long)]
+        cloud_delete_local: bool,
+
+        /// Stop on first cloud upload failure (default: continue and report)
+        #[arg(long)]
+        cloud_fail_fast: bool,
     },
 
     /// Generate single key from passphrase
@@ -311,6 +351,11 @@ fn main() -> Result<()> {
             chunk_bytes,
             compression,
             compression_level,
+            cloud_upload,
+            cloud_endpoint,
+            cloud_bucket,
+            cloud_delete_local,
+            cloud_fail_fast,
         } => {
             let _network = parse_network(&network);
 
@@ -324,6 +369,11 @@ fn main() -> Result<()> {
                 chunk_bytes,
                 compression,
                 compression_level,
+                cloud_upload,
+                cloud_endpoint,
+                cloud_bucket,
+                cloud_delete_local,
+                cloud_fail_fast,
             )
         }
 
@@ -338,6 +388,11 @@ fn main() -> Result<()> {
             chunk_bytes,
             compression,
             compression_level,
+            cloud_upload,
+            cloud_endpoint,
+            cloud_bucket,
+            cloud_delete_local,
+            cloud_fail_fast,
         } => run_scan(
             source,
             transform,
@@ -348,6 +403,11 @@ fn main() -> Result<()> {
             chunk_bytes,
             compression,
             compression_level,
+            cloud_upload,
+            cloud_endpoint,
+            cloud_bucket,
+            cloud_delete_local,
+            cloud_fail_fast,
         ),
 
         Command::Single {
@@ -400,7 +460,6 @@ fn main() -> Result<()> {
     }
 }
 
-// TODO: GPU for generate/scan needs Source trait redesign (rayon par_chunks vs GPU batch model)
 fn run_generate(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
@@ -411,6 +470,11 @@ fn run_generate(
     chunk_bytes: u64,
     compression: CompressionAlgorithm,
     compression_level: i32,
+    cloud_upload: bool,
+    cloud_endpoint: Option<String>,
+    cloud_bucket: Option<String>,
+    cloud_delete_local: bool,
+    cloud_fail_fast: bool,
 ) -> Result<()> {
     let source = create_source(source_cmd)?;
     let transform_instances = create_transforms(transforms.clone());
@@ -482,9 +546,47 @@ fn run_generate(
     );
 
     #[cfg(feature = "storage")]
-    if let Some(storage) = storage_output {
-        print_storage_summary(storage)?;
+    let written_paths = if let Some(storage) = storage_output {
+        let summary = storage.finish()?;
+        print_storage_summary_inline(&summary);
+        summary.paths
+    } else {
+        Vec::new()
+    };
+
+    #[cfg(feature = "storage-cloud")]
+    if cloud_upload {
+        #[cfg(feature = "storage")]
+        perform_cloud_upload(
+            written_paths,
+            cloud_endpoint,
+            cloud_bucket,
+            cloud_delete_local,
+            cloud_fail_fast,
+        )?;
+
+        #[cfg(not(feature = "storage"))]
+        anyhow::bail!("--cloud-upload requires --storage to be specified");
     }
+
+    #[cfg(all(feature = "storage", not(feature = "storage-cloud")))]
+    let _ = (
+        written_paths,
+        cloud_upload,
+        cloud_endpoint,
+        cloud_bucket,
+        cloud_delete_local,
+        cloud_fail_fast,
+    );
+
+    #[cfg(not(feature = "storage"))]
+    let _ = (
+        cloud_upload,
+        cloud_endpoint,
+        cloud_bucket,
+        cloud_delete_local,
+        cloud_fail_fast,
+    );
 
     Ok(())
 }
@@ -499,6 +601,11 @@ fn run_scan(
     chunk_bytes: u64,
     compression: CompressionAlgorithm,
     compression_level: i32,
+    cloud_upload: bool,
+    cloud_endpoint: Option<String>,
+    cloud_bucket: Option<String>,
+    cloud_delete_local: bool,
+    cloud_fail_fast: bool,
 ) -> Result<()> {
     eprintln!("Loading targets from {:?}...", targets);
     let matcher = Matcher::load(&targets)?;
@@ -572,9 +679,47 @@ fn run_scan(
     );
 
     #[cfg(feature = "storage")]
-    if let Some(storage) = storage_output {
-        print_storage_summary(storage)?;
+    let written_paths = if let Some(storage) = storage_output {
+        let summary = storage.finish()?;
+        print_storage_summary_inline(&summary);
+        summary.paths
+    } else {
+        Vec::new()
+    };
+
+    #[cfg(feature = "storage-cloud")]
+    if cloud_upload {
+        #[cfg(feature = "storage")]
+        perform_cloud_upload(
+            written_paths,
+            cloud_endpoint,
+            cloud_bucket,
+            cloud_delete_local,
+            cloud_fail_fast,
+        )?;
+
+        #[cfg(not(feature = "storage"))]
+        anyhow::bail!("--cloud-upload requires --storage to be specified");
     }
+
+    #[cfg(all(feature = "storage", not(feature = "storage-cloud")))]
+    let _ = (
+        written_paths,
+        cloud_upload,
+        cloud_endpoint,
+        cloud_bucket,
+        cloud_delete_local,
+        cloud_fail_fast,
+    );
+
+    #[cfg(not(feature = "storage"))]
+    let _ = (
+        cloud_upload,
+        cloud_endpoint,
+        cloud_bucket,
+        cloud_delete_local,
+        cloud_fail_fast,
+    );
 
     Ok(())
 }
@@ -620,10 +765,9 @@ fn run_single(passphrase: &str, transform_type: TransformType, network: &str) ->
 }
 
 #[cfg(feature = "storage")]
-fn print_storage_summary(storage: vuke::output::StorageOutput) -> Result<()> {
-    let summary = storage.finish()?;
+fn print_storage_summary_inline(summary: &vuke::output::StorageSummary) {
     if summary.paths.is_empty() {
-        return Ok(());
+        return;
     }
 
     let mut total_bytes: u64 = 0;
@@ -644,8 +788,6 @@ fn print_storage_summary(storage: vuke::output::StorageOutput) -> Result<()> {
     for (path, size) in file_info {
         eprintln!("  {} ({})", path.display(), format_bytes(size));
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "storage")]
@@ -663,6 +805,100 @@ fn format_bytes(bytes: u64) -> String {
     } else {
         format!("{} B", bytes)
     }
+}
+
+#[cfg(feature = "storage-cloud")]
+fn perform_cloud_upload(
+    paths: Vec<PathBuf>,
+    endpoint: Option<String>,
+    bucket: Option<String>,
+    delete_local: bool,
+    fail_fast: bool,
+) -> Result<()> {
+    use std::sync::Arc;
+    use vuke::storage::cloud::{
+        sync_to_cloud_blocking, CloudConfig, S3CloudUploader, StatsProgress,
+    };
+
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let bucket = bucket.ok_or_else(|| {
+        anyhow::anyhow!("--cloud-bucket is required when --cloud-upload is enabled")
+    })?;
+
+    let mut config = CloudConfig::new(&bucket)
+        .with_delete_local(delete_local)
+        .with_fail_fast(fail_fast);
+
+    if let Some(ref ep) = endpoint {
+        config = config.with_endpoint(ep);
+    }
+
+    let stats = Arc::new(vuke::storage::cloud::UploadStats::new());
+    let progress = Arc::new(StatsProgress::new(stats));
+    let uploader = S3CloudUploader::new(config.clone(), progress)
+        .map_err(|e| anyhow::anyhow!("Failed to create cloud uploader: {}", e))?;
+
+    eprintln!("\nUploading {} files to s3://{}...", paths.len(), bucket);
+
+    let result = sync_to_cloud_blocking(paths.clone(), Arc::new(uploader), 4);
+
+    if result.is_success() {
+        eprintln!(
+            "Cloud upload complete: {} files uploaded",
+            result.completed_count()
+        );
+
+        for cloud_path in &result.completed {
+            eprintln!("  ✓ {}", cloud_path.url(endpoint.as_deref()));
+        }
+
+        if delete_local {
+            // Only delete files that were successfully uploaded
+            let uploaded_keys: std::collections::HashSet<_> = result
+                .completed
+                .iter()
+                .map(|cp| cp.key.split('/').last().unwrap_or(&cp.key))
+                .collect();
+
+            let mut deleted = 0;
+            for path in &paths {
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if uploaded_keys.contains(filename) && std::fs::remove_file(path).is_ok() {
+                    deleted += 1;
+                }
+            }
+            if deleted > 0 {
+                eprintln!("Deleted {} local files", deleted);
+            }
+        }
+    } else {
+        eprintln!(
+            "Cloud upload completed with errors: {} succeeded, {} failed",
+            result.completed_count(),
+            result.failed_count()
+        );
+
+        for cloud_path in &result.completed {
+            eprintln!("  ✓ {}", cloud_path.url(endpoint.as_deref()));
+        }
+
+        for (path, error) in &result.failed {
+            eprintln!("  ✗ {}: {}", path.display(), error);
+        }
+
+        if fail_fast {
+            anyhow::bail!(
+                "Cloud upload failed: {} of {} files failed",
+                result.failed_count(),
+                paths.len()
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "storage-query")]
