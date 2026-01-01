@@ -140,7 +140,7 @@ fn format_value_json(value: &Value) -> String {
         Value::Binary(b) => format!("\"{}\"", hex::encode(b)),
         Value::Timestamp(ts) => chrono::DateTime::from_timestamp_millis(*ts)
             .map(|dt| format!("\"{}\"", dt.to_rfc3339()))
-            .unwrap_or_else(|| ts.to_string()),
+            .unwrap_or_else(|| format!("\"{}\"", ts)),
     }
 }
 
@@ -392,6 +392,23 @@ mod tests {
             format_value_json(&Value::Binary(vec![0xde, 0xad])),
             "\"dead\""
         );
+    }
+
+    #[test]
+    fn format_value_json_valid_timestamp_is_quoted_rfc3339() {
+        let ts = Value::Timestamp(1704067200000);
+        let result = format_value_json(&ts);
+        assert!(result.starts_with('"'));
+        assert!(result.ends_with('"'));
+        assert!(result.contains("2024-01-01"));
+    }
+
+    #[test]
+    fn format_value_json_invalid_timestamp_is_still_quoted() {
+        let ts = Value::Timestamp(i64::MAX);
+        let result = format_value_json(&ts);
+        assert!(result.starts_with('"'));
+        assert!(result.ends_with('"'));
     }
 
     #[test]
