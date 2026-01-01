@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as ObjectPath;
-use object_store::{ObjectStore, PutPayload};
+use object_store::{ObjectStore, WriteMultipart};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -143,14 +143,22 @@ impl S3CloudUploader {
 
     async fn do_upload(&self, local_path: &Path) -> Result<CloudPath> {
         let mut file = File::open(local_path).await?;
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents).await?;
-
         let remote_key = self.compute_remote_key(local_path);
         let object_path = ObjectPath::from(remote_key.clone());
 
-        let payload = PutPayload::from(contents);
-        self.store.put(&object_path, payload).await?;
+        let upload = self.store.put_multipart(&object_path).await?;
+        let mut writer = WriteMultipart::new(upload);
+
+        let mut buf = vec![0u8; 8 * 1024 * 1024];
+        loop {
+            let n = file.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            writer.write(&buf[..n]);
+        }
+
+        writer.finish().await?;
 
         Ok(CloudPath::new(&self.config.bucket, remote_key))
     }
