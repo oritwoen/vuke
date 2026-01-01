@@ -1,5 +1,6 @@
 # vuke
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oritwoen/vuke)
 [![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/gh/oritwoen/vuke)
 
 Research tool for analyzing and reproducing vulnerable Bitcoin key generation.
