@@ -104,23 +104,23 @@ impl BatchUploader {
 
     pub async fn upload_all(&self, paths: Vec<PathBuf>) -> SyncResult {
         let (tx, mut rx) = mpsc::channel::<(PathBuf, Result<CloudPath>)>(self.concurrency * 2);
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(self.concurrency));
 
         let mut handles = Vec::new();
         let mut completed = Vec::new();
         let mut failed = Vec::new();
 
-        for chunk in paths.chunks(self.concurrency) {
-            for path in chunk {
-                let uploader = self.uploader.clone();
-                let path = path.clone();
-                let tx = tx.clone();
+        for path in paths {
+            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let uploader = self.uploader.clone();
+            let tx = tx.clone();
 
-                let handle = tokio::spawn(async move {
-                    let result = uploader.upload_file(&path).await;
-                    let _ = tx.send((path, result)).await;
-                });
-                handles.push(handle);
-            }
+            let handle = tokio::spawn(async move {
+                let result = uploader.upload_file(&path).await;
+                let _ = tx.send((path, result)).await;
+                drop(permit);
+            });
+            handles.push(handle);
         }
 
         drop(tx);
