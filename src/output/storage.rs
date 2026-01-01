@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use chrono::Utc;
 
+use parquet::basic::Compression;
+
 use super::Output;
 use crate::derive::DerivedKey;
 use crate::matcher::MatchInfo;
@@ -23,6 +25,7 @@ struct StorageInner {
     transform: String,
     chunk_records: u64,
     chunk_bytes: u64,
+    compression: Compression,
 }
 
 #[derive(Clone)]
@@ -38,7 +41,8 @@ pub struct StorageSummary {
 impl StorageOutput {
     pub fn new(base_dir: impl AsRef<Path>, transform: &str) -> Result<Self> {
         let base_dir = base_dir.as_ref().to_path_buf();
-        let backend = ParquetBackend::new(&base_dir, transform);
+        let compression = Compression::ZSTD(Default::default());
+        let backend = ParquetBackend::new(&base_dir, transform).with_compression(compression);
         Ok(Self {
             inner: Arc::new(StorageInner {
                 backend: Mutex::new(Some(backend)),
@@ -48,6 +52,7 @@ impl StorageOutput {
                 transform: transform.to_string(),
                 chunk_records: 1_000_000,
                 chunk_bytes: 100 * 1024 * 1024,
+                compression,
             }),
         })
     }
@@ -57,6 +62,7 @@ impl StorageOutput {
             inner: Arc::new(StorageInner {
                 backend: Mutex::new(Some(
                     ParquetBackend::new(&self.inner.base_dir, &self.inner.transform)
+                        .with_compression(self.inner.compression)
                         .with_chunk_records(max_records)
                         .with_chunk_bytes(self.inner.chunk_bytes),
                 )),
@@ -66,6 +72,7 @@ impl StorageOutput {
                 transform: self.inner.transform.clone(),
                 chunk_records: max_records,
                 chunk_bytes: self.inner.chunk_bytes,
+                compression: self.inner.compression,
             }),
         }
     }
@@ -75,6 +82,7 @@ impl StorageOutput {
             inner: Arc::new(StorageInner {
                 backend: Mutex::new(Some(
                     ParquetBackend::new(&self.inner.base_dir, &self.inner.transform)
+                        .with_compression(self.inner.compression)
                         .with_chunk_records(self.inner.chunk_records)
                         .with_chunk_bytes(max_bytes),
                 )),
@@ -84,6 +92,7 @@ impl StorageOutput {
                 transform: self.inner.transform.clone(),
                 chunk_records: self.inner.chunk_records,
                 chunk_bytes: max_bytes,
+                compression: self.inner.compression,
             }),
         }
     }
@@ -93,6 +102,7 @@ impl StorageOutput {
             inner: Arc::new(StorageInner {
                 backend: Mutex::new(Some(
                     ParquetBackend::new(&self.inner.base_dir, &self.inner.transform)
+                        .with_compression(self.inner.compression)
                         .with_chunk_records(self.inner.chunk_records)
                         .with_chunk_bytes(self.inner.chunk_bytes),
                 )),
@@ -102,6 +112,27 @@ impl StorageOutput {
                 transform: self.inner.transform.clone(),
                 chunk_records: self.inner.chunk_records,
                 chunk_bytes: self.inner.chunk_bytes,
+                compression: self.inner.compression,
+            }),
+        }
+    }
+
+    pub fn with_compression(self, compression: Compression) -> Self {
+        Self {
+            inner: Arc::new(StorageInner {
+                backend: Mutex::new(Some(
+                    ParquetBackend::new(&self.inner.base_dir, &self.inner.transform)
+                        .with_compression(compression)
+                        .with_chunk_records(self.inner.chunk_records)
+                        .with_chunk_bytes(self.inner.chunk_bytes),
+                )),
+                records_written: AtomicU64::new(0),
+                chain: self.inner.chain.clone(),
+                base_dir: self.inner.base_dir.clone(),
+                transform: self.inner.transform.clone(),
+                chunk_records: self.inner.chunk_records,
+                chunk_bytes: self.inner.chunk_bytes,
+                compression,
             }),
         }
     }
@@ -380,5 +411,43 @@ mod tests {
 
         let summary = output1.finish().unwrap();
         assert_eq!(summary.records_written, 2);
+    }
+
+    #[test]
+    fn with_compression_creates_smaller_files() {
+        use parquet::basic::ZstdLevel;
+
+        let dir = tempdir().unwrap();
+        let derived = make_test_derived();
+
+        let dir_zstd = dir.path().join("zstd");
+        let output_zstd = StorageOutput::new(&dir_zstd, "sha256")
+            .unwrap()
+            .with_compression(Compression::ZSTD(ZstdLevel::try_new(19).unwrap()));
+        for i in 0..100 {
+            let source = format!("source_{}", i);
+            output_zstd.key(&source, "sha256", &derived).unwrap();
+        }
+        let summary_zstd = output_zstd.finish().unwrap();
+
+        let dir_none = dir.path().join("none");
+        let output_none = StorageOutput::new(&dir_none, "sha256")
+            .unwrap()
+            .with_compression(Compression::UNCOMPRESSED);
+        for i in 0..100 {
+            let source = format!("source_{}", i);
+            output_none.key(&source, "sha256", &derived).unwrap();
+        }
+        let summary_none = output_none.finish().unwrap();
+
+        let size_zstd = fs::metadata(&summary_zstd.paths[0]).unwrap().len();
+        let size_none = fs::metadata(&summary_none.paths[0]).unwrap().len();
+
+        assert!(
+            size_zstd < size_none,
+            "ZSTD ({} bytes) should be smaller than uncompressed ({} bytes)",
+            size_zstd,
+            size_none
+        );
     }
 }

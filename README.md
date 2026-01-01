@@ -160,6 +160,14 @@ vuke generate --storage ./results --transform milksad range --start 1 --end 1000
 
 # Configure chunk rotation
 vuke generate --storage ./results --chunk-records 500000 --chunk-bytes 50M range --start 1 --end 10000000
+
+# Configure compression (default: zstd level 3)
+vuke generate --storage ./results --compression zstd --compression-level 9 range --start 1 --end 1000000
+
+# No compression (fastest writes)
+vuke generate --storage ./results --compression none range --start 1 --end 1000000
+
+# Available algorithms: none, snappy, gzip, lz4, zstd
 ```
 
 ### Query stored results (SQL)

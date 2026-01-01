@@ -3,7 +3,7 @@
 //! Combines multiple key derivation methods to analyze weak key generation patterns.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 use vuke::analyze::{
@@ -41,6 +41,22 @@ fn parse_byte_size(s: &str) -> Result<u64, String> {
     } else {
         s.parse::<u64>().map_err(|e| e.to_string())
     }
+}
+
+/// Compression algorithm for Parquet storage
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum CompressionAlgorithm {
+    /// No compression (fastest writes, largest files)
+    None,
+    /// Snappy compression (fast, moderate ratio)
+    Snappy,
+    /// Gzip compression (slow, good ratio)
+    Gzip,
+    /// LZ4 compression (very fast, moderate ratio)
+    Lz4,
+    /// Zstd compression (configurable speed/ratio tradeoff)
+    #[default]
+    Zstd,
 }
 
 #[derive(Parser)]
@@ -91,6 +107,14 @@ enum Command {
         /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
         #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
         chunk_bytes: u64,
+
+        /// Compression algorithm for Parquet storage
+        #[arg(long, value_enum, default_value = "zstd")]
+        compression: CompressionAlgorithm,
+
+        /// Zstd compression level (1-22, higher = slower but smaller)
+        #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
+        compression_level: i32,
     },
 
     /// Scan for specific addresses
@@ -125,6 +149,14 @@ enum Command {
         /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
         #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
         chunk_bytes: u64,
+
+        /// Compression algorithm for Parquet storage
+        #[arg(long, value_enum, default_value = "zstd")]
+        compression: CompressionAlgorithm,
+
+        /// Zstd compression level (1-22, higher = slower but smaller)
+        #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
+        compression_level: i32,
     },
 
     /// Generate single key from passphrase
@@ -277,6 +309,8 @@ fn main() -> Result<()> {
             storage,
             chunk_records,
             chunk_bytes,
+            compression,
+            compression_level,
         } => {
             let _network = parse_network(&network);
 
@@ -288,6 +322,8 @@ fn main() -> Result<()> {
                 storage,
                 chunk_records,
                 chunk_bytes,
+                compression,
+                compression_level,
             )
         }
 
@@ -300,6 +336,8 @@ fn main() -> Result<()> {
             storage,
             chunk_records,
             chunk_bytes,
+            compression,
+            compression_level,
         } => run_scan(
             source,
             transform,
@@ -308,6 +346,8 @@ fn main() -> Result<()> {
             storage,
             chunk_records,
             chunk_bytes,
+            compression,
+            compression_level,
         ),
 
         Command::Single {
@@ -369,6 +409,8 @@ fn run_generate(
     storage_path: Option<PathBuf>,
     chunk_records: u64,
     chunk_bytes: u64,
+    compression: CompressionAlgorithm,
+    compression_level: i32,
 ) -> Result<()> {
     let source = create_source(source_cmd)?;
     let transform_instances = create_transforms(transforms.clone());
@@ -382,12 +424,27 @@ fn run_generate(
 
     #[cfg(feature = "storage")]
     let storage_output: Option<vuke::output::StorageOutput> = if let Some(ref path) = storage_path {
+        use parquet::basic::{Compression, GzipLevel, ZstdLevel};
+
+        let parquet_compression = match compression {
+            CompressionAlgorithm::None => Compression::UNCOMPRESSED,
+            CompressionAlgorithm::Snappy => Compression::SNAPPY,
+            CompressionAlgorithm::Gzip => {
+                Compression::GZIP(GzipLevel::try_new(compression_level as u32).unwrap_or_default())
+            }
+            CompressionAlgorithm::Lz4 => Compression::LZ4,
+            CompressionAlgorithm::Zstd => {
+                Compression::ZSTD(ZstdLevel::try_new(compression_level).unwrap_or_default())
+            }
+        };
+
         let transform_name = transforms
             .first()
             .map(|t| t.create().name().to_string())
             .unwrap_or_else(|| "unknown".to_string());
         Some(
             vuke::output::StorageOutput::new(path, &transform_name)?
+                .with_compression(parquet_compression)
                 .with_chunk_records(chunk_records)
                 .with_chunk_bytes(chunk_bytes),
         )
@@ -411,7 +468,7 @@ fn run_generate(
                 "--storage requires the 'storage' feature. Rebuild with: cargo build --features storage"
             );
         }
-        let _ = (chunk_records, chunk_bytes);
+        let _ = (chunk_records, chunk_bytes, compression, compression_level);
         console_out
     };
 
@@ -440,6 +497,8 @@ fn run_scan(
     storage_path: Option<PathBuf>,
     chunk_records: u64,
     chunk_bytes: u64,
+    compression: CompressionAlgorithm,
+    compression_level: i32,
 ) -> Result<()> {
     eprintln!("Loading targets from {:?}...", targets);
     let matcher = Matcher::load(&targets)?;
@@ -455,12 +514,27 @@ fn run_scan(
 
     #[cfg(feature = "storage")]
     let storage_output: Option<vuke::output::StorageOutput> = if let Some(ref path) = storage_path {
+        use parquet::basic::{Compression, GzipLevel, ZstdLevel};
+
+        let parquet_compression = match compression {
+            CompressionAlgorithm::None => Compression::UNCOMPRESSED,
+            CompressionAlgorithm::Snappy => Compression::SNAPPY,
+            CompressionAlgorithm::Gzip => {
+                Compression::GZIP(GzipLevel::try_new(compression_level as u32).unwrap_or_default())
+            }
+            CompressionAlgorithm::Lz4 => Compression::LZ4,
+            CompressionAlgorithm::Zstd => {
+                Compression::ZSTD(ZstdLevel::try_new(compression_level).unwrap_or_default())
+            }
+        };
+
         let transform_name = transforms
             .first()
             .map(|t| t.create().name().to_string())
             .unwrap_or_else(|| "unknown".to_string());
         Some(
             vuke::output::StorageOutput::new(path, &transform_name)?
+                .with_compression(parquet_compression)
                 .with_chunk_records(chunk_records)
                 .with_chunk_bytes(chunk_bytes),
         )
@@ -484,7 +558,7 @@ fn run_scan(
                 "--storage requires the 'storage' feature. Rebuild with: cargo build --features storage"
             );
         }
-        let _ = (chunk_records, chunk_bytes);
+        let _ = (chunk_records, chunk_bytes, compression, compression_level);
         console_out
     };
 
