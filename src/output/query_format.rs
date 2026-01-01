@@ -402,4 +402,27 @@ mod tests {
         assert!(result.contains("🔑"));
         assert!(result.contains("..."));
     }
+
+    #[test]
+    fn format_schema_displays_columns() {
+        use arrow::datatypes::{DataType, Field};
+
+        let schema = Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("data", DataType::Binary, true),
+        ]);
+
+        let result = format_schema(&schema);
+
+        assert!(result.contains("Schema: results (3 columns)"));
+        assert!(result.contains("id"));
+        assert!(result.contains("name"));
+        assert!(result.contains("data"));
+        assert!(result.contains("Int64"));
+        assert!(result.contains("Utf8"));
+        assert!(result.contains("Binary"));
+        assert!(result.contains("Yes"));
+        assert!(result.contains("No"));
+    }
 }
