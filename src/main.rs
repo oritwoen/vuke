@@ -146,9 +146,9 @@ enum Command {
         #[arg(long, value_parser = parse_transform_type, num_args = 1..)]
         transform: Vec<TransformType>,
 
-        /// Target addresses file (one per line)
+        /// Target addresses: file path OR provider (e.g., boha:b1000:unsolved)
         #[arg(long)]
-        targets: PathBuf,
+        targets: String,
 
         /// Network (bitcoin, testnet, signet, regtest)
         #[arg(long, default_value = "bitcoin")]
@@ -260,6 +260,14 @@ enum Command {
         /// Depth of SHA256 chain to search (for sha256_chain analyzer)
         #[arg(long, value_name = "DEPTH", default_value = "10")]
         chain_depth: u32,
+
+        /// Puzzle provider reference (e.g., boha:b1000:66) - auto-sets mask from puzzle
+        #[arg(long, value_name = "PROVIDER")]
+        puzzle: Option<String>,
+
+        /// Verify key against provider collection (e.g., boha:b1000)
+        #[arg(long, value_name = "PROVIDER")]
+        verify: Option<String>,
 
         /// Output as JSON
         #[arg(long)]
@@ -428,6 +436,8 @@ fn main() -> Result<()> {
             mnemonic_file,
             passphrase,
             chain_depth,
+            puzzle,
+            verify,
             json,
         } => {
             #[cfg(feature = "gpu")]
@@ -445,6 +455,8 @@ fn main() -> Result<()> {
                 mnemonic_file,
                 passphrase,
                 chain_depth,
+                puzzle,
+                verify,
                 json,
                 use_gpu,
             )
@@ -594,7 +606,7 @@ fn run_generate(
 fn run_scan(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
-    targets: PathBuf,
+    targets: String,
     output_file: Option<PathBuf>,
     storage_path: Option<PathBuf>,
     chunk_records: u64,
@@ -607,9 +619,23 @@ fn run_scan(
     cloud_delete_local: bool,
     cloud_fail_fast: bool,
 ) -> Result<()> {
-    eprintln!("Loading targets from {:?}...", targets);
-    let matcher = Matcher::load(&targets)?;
-    eprintln!("Loaded {} targets.", matcher.count());
+    let matcher = match vuke::provider::resolve(&targets)? {
+        Some(result) => {
+            eprintln!(
+                "Provider: {} → {} addresses",
+                targets,
+                result.addresses.len()
+            );
+            Matcher::from_addresses(result.addresses)
+        }
+        None => {
+            let path = PathBuf::from(&targets);
+            eprintln!("Loading targets from {:?}...", path);
+            let m = Matcher::load(&path)?;
+            eprintln!("Loaded {} targets.", m.count());
+            m
+        }
+    };
 
     let source = create_source(source_cmd)?;
     let transform_instances = create_transforms(transforms.clone());
@@ -986,6 +1012,16 @@ fn create_transforms(types: Vec<TransformType>) -> Vec<Box<dyn Transform>> {
     types.into_iter().map(|t| t.create()).collect()
 }
 
+fn resolve_cascade(input: &str) -> Result<Option<Vec<(u8, u64)>>> {
+    use vuke::analyze::parse_cascade;
+
+    if vuke::provider::is_provider(input) {
+        vuke::provider::build_cascade(input)
+    } else {
+        Ok(Some(parse_cascade(input)?))
+    }
+}
+
 fn run_analyze(
     key_input: &str,
     fast: bool,
@@ -996,19 +1032,109 @@ fn run_analyze(
     mnemonic_file: Option<PathBuf>,
     passphrase: String,
     chain_depth: u32,
+    puzzle_input: Option<String>,
+    verify_input: Option<String>,
     json_output: bool,
     use_gpu: bool,
 ) -> Result<()> {
     use indicatif::ProgressBar;
-    use vuke::analyze::{parse_cascade, AnalysisConfig};
+    use vuke::analyze::AnalysisConfig;
 
-    let cascade_targets = match cascade_input {
-        Some(ref input) => Some(parse_cascade(input)?),
-        None => None,
+    let (mask_bits, cascade_targets, puzzle_context) = if let Some(ref puzzle_ref) = puzzle_input {
+        match vuke::provider::resolve(puzzle_ref)? {
+            Some(result) => {
+                let puzzle_mask = result.puzzle_context.as_ref().and_then(|ctx| ctx.mask_bits);
+                let final_mask = mask_bits.or(puzzle_mask);
+
+                let final_cascade = match cascade_input {
+                    Some(ref input) => resolve_cascade(input)?,
+                    None => result.cascade_targets,
+                };
+
+                (final_mask, final_cascade, result.puzzle_context)
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Invalid puzzle provider reference: {}",
+                    puzzle_ref
+                ));
+            }
+        }
+    } else {
+        let cascade = match cascade_input {
+            Some(ref input) => resolve_cascade(input)?,
+            None => None,
+        };
+        (mask_bits, cascade, None)
     };
+
+    if let Some(ref ctx) = puzzle_context {
+        if !json_output {
+            eprintln!("Puzzle: {} ({})", ctx.id, ctx.address_type);
+            eprintln!("Expected: {}", ctx.expected_address);
+            if let Some(bits) = ctx.mask_bits {
+                eprintln!("Auto-mask: {} bits", bits);
+            }
+        }
+    }
 
     let key = parse_private_key(key_input)?;
     let metadata = KeyMetadata::from_key(&key);
+
+    if let Some(ref verify_ref) = verify_input {
+        match vuke::provider::verify_key(&key, verify_ref)? {
+            Some(report) => {
+                if json_output {
+                    let matches_json: Vec<String> = report
+                        .matches
+                        .iter()
+                        .map(|m| {
+                            format!(
+                                r#"{{"puzzle_id":"{}","address":"{}","address_type":"{}","status":"{}","prize":{}}}"#,
+                                m.puzzle_id,
+                                m.address,
+                                m.address_type,
+                                m.status,
+                                m.prize.map_or("null".to_string(), |p| p.to_string())
+                            )
+                        })
+                        .collect();
+                    println!(
+                        r#"{{"key":"{}","total_checked":{},"matches":[{}]}}"#,
+                        key_input,
+                        report.total_checked,
+                        matches_json.join(",")
+                    );
+                } else {
+                    println!("Verification Report");
+                    println!("---");
+                    println!("Key: {}", key_input);
+                    println!("Checked: {} puzzles", report.total_checked);
+                    println!();
+
+                    if report.matches.is_empty() {
+                        println!("No matches found.");
+                    } else {
+                        println!("Matches:");
+                        for m in &report.matches {
+                            println!("  {} ({})", m.puzzle_id, m.status);
+                            println!("    Address: {} ({})", m.address, m.address_type);
+                            if let Some(prize) = m.prize {
+                                println!("    Prize: {} BTC", prize);
+                            }
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Invalid verify provider reference: {}",
+                    verify_ref
+                ));
+            }
+        }
+    }
 
     if let Some(bits) = mask_bits {
         let key_bits = vuke::analyze::calculate_bit_length(&key);

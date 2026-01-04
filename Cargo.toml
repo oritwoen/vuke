@@ -15,6 +15,7 @@ gpu = ["wgpu", "pollster", "bytemuck"]
 storage = ["parquet", "arrow"]
 storage-query = ["storage", "duckdb", "comfy-table"]
 storage-cloud = ["storage", "object_store", "tokio", "async-trait", "futures"]
+boha = ["dep:boha"]
 
 [dependencies]
 # Core
@@ -54,6 +55,9 @@ object_store = { version = "0.11", optional = true, features = ["aws"] }
 tokio = { version = "1", optional = true, features = ["rt-multi-thread", "sync", "time"] }
 async-trait = { version = "0.1", optional = true }
 futures = { version = "0.3", optional = true }
+
+# Puzzle data (optional)
+boha = { version = "0.11", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"

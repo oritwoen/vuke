@@ -17,6 +17,7 @@ pub mod matcher;
 pub mod output;
 pub mod benchmark;
 pub mod network;
+pub mod provider;
 
 #[cfg(feature = "gpu")]
 pub mod gpu;

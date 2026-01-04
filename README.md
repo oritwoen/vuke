@@ -91,6 +91,31 @@ P2WPKH:               bc1qfnpg7ceg02y64qrskgz0drwp3y6hma3q6wvnzr
 vuke scan --transform=sha256 --targets known_addresses.txt wordlist --file passwords.txt
 ```
 
+### Data Providers
+
+Instead of file paths, use provider references for dynamic target loading:
+
+```bash
+# Scan all unsolved b1000 puzzles
+vuke scan --transform=milksad --targets boha:b1000:unsolved range --start 1 --end 1000000
+
+# Scan specific collection with filter
+vuke scan --transform=sha256 --targets boha:b1000:with-pubkey wordlist --file words.txt
+
+# Available filters: all, unsolved, solved, with-pubkey
+vuke scan --targets boha:hash_collision:unsolved wordlist --file words.txt
+```
+
+Provider syntax: `provider:collection:filter` or `provider:collection:id`
+
+Available collections (boha provider):
+- `b1000` - Bitcoin puzzle 1000 (256 puzzles, 1-256 bits)
+- `gsmg` - GSMG puzzle
+- `bitaps` - Bitaps puzzle  
+- `hash_collision` - Hash collision puzzles
+- `zden` - Zden puzzles
+- `bitimage` - Bitimage puzzles
+
 ### Test numeric range (weak seeds)
 
 ```bash
@@ -361,6 +386,34 @@ Probability analysis:
 - P5 alone: 1/16 chance of false positive
 - P5 + P10: 1/16 × 1/512 = 1/8192
 - P5 + P10 + P15: virtually impossible false positive
+
+### Provider-based analysis
+
+Use data providers to automatically configure puzzle analysis:
+
+```bash
+# Auto-set mask from puzzle bits (puzzle #5 = 5 bits)
+vuke analyze 0x15 --puzzle boha:b1000:5
+
+# Build cascade from solved neighbors (3 puzzles before #5)
+vuke analyze 0x15 --cascade boha:b1000:5:3 --analyzer milksad
+
+# Verify key against entire collection
+vuke analyze 0x01 --verify boha:b1000
+
+# JSON output for scripting
+vuke analyze 0x01 --verify boha:b1000 --json
+```
+
+The `--puzzle` flag:
+- Loads puzzle context from provider
+- Auto-sets `--mask` from puzzle.key.bits
+- Displays expected address for verification
+
+The `--cascade` with provider:
+- Format: `boha:collection:puzzle_id:neighbor_count`
+- Builds cascade from N solved puzzles before target
+- Default: 5 neighbors if count not specified
 
 ### MT19937-64 analyzer (64-bit seeds)
 
