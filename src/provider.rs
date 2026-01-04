@@ -157,7 +157,7 @@ fn resolve_boha(query: &str) -> Result<ProviderResult> {
 
     match parts.as_slice() {
         [collection, id] | [collection, id, _] if id.parse::<u32>().is_ok() => {
-            let num: u32 = id.parse().unwrap();
+            let num: u32 = id.parse().expect("guard ensures valid u32");
             let puzzle_id = format!("{}/{}", collection, num);
             let puzzle = boha::get(&puzzle_id)
                 .map_err(|e| anyhow!("Failed to get puzzle '{}': {}", puzzle_id, e))?;
@@ -335,7 +335,7 @@ fn build_cascade_boha(query: &str) -> Result<Vec<(u8, u64)>> {
     let mut cascade_targets: Vec<(u8, u64)> = Vec::new();
 
     let start = puzzle_num.saturating_sub(1);
-    let end = puzzle_num.saturating_sub(neighbor_count as u32 + 1);
+    let end = puzzle_num.saturating_sub(neighbor_count as u32);
 
     for n in (end..=start).rev() {
         if n < 1 {
