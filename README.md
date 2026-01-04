@@ -268,6 +268,44 @@ Cloud upload features:
 - Concurrent uploads with configurable parallelism
 - Only deletes local files that were successfully uploaded
 
+### Iceberg catalog registration
+
+Register uploaded Parquet files in an Apache Iceberg catalog for SQL querying (requires `storage-iceberg` feature):
+
+```bash
+# Build with Iceberg support
+cargo build --release --features storage-iceberg
+
+# Set credentials
+export CLOUD_ACCESS_KEY_ID=your_key
+export CLOUD_SECRET_ACCESS_KEY=your_secret
+
+# Generate, upload, and register in Iceberg catalog
+vuke generate --storage ./results --cloud-upload --cloud-bucket my-bucket \
+  --iceberg-catalog http://localhost:8181 \
+  --transform milksad range --start 1 --end 1000000
+
+# With custom namespace and table name
+vuke generate --storage ./results --cloud-upload --cloud-bucket my-bucket \
+  --iceberg-catalog http://localhost:8181 \
+  --iceberg-namespace my_namespace \
+  --iceberg-table my_results \
+  --transform milksad range --start 1 --end 1000000
+
+# Using environment variables
+export ICEBERG_CATALOG=http://localhost:8181
+export ICEBERG_NAMESPACE=vuke
+export ICEBERG_TABLE=results
+vuke generate --storage ./results --cloud-upload --cloud-bucket my-bucket \
+  --transform milksad range --start 1 --end 1000000
+```
+
+Iceberg catalog features:
+- REST catalog protocol (compatible with Apache Polaris, Nessie, Tabular, etc.)
+- Automatic table creation with schema and partition spec
+- Partitioned by `transform` (identity) and `timestamp` (day)
+- Credentials shared with cloud upload (CLOUD_*/AWS_* env vars)
+
 ### Benchmark transforms
 
 ```bash

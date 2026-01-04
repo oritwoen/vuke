@@ -1,8 +1,10 @@
+mod credentials;
 pub mod error;
 pub mod progress;
 mod s3;
 mod sync;
 
+pub use credentials::CloudCredentials;
 pub use error::{CloudError, Result};
 pub use progress::{NoOpProgress, StatsProgress, UploadProgress, UploadStats};
 pub use s3::S3CloudUploader;

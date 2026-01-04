@@ -135,6 +135,18 @@ enum Command {
         /// Stop on first cloud upload failure (default: continue and report)
         #[arg(long)]
         cloud_fail_fast: bool,
+
+        /// Iceberg REST catalog URL (requires 'storage-iceberg' feature)
+        #[arg(long, env = "ICEBERG_CATALOG")]
+        iceberg_catalog: Option<String>,
+
+        /// Iceberg namespace (default: vuke)
+        #[arg(long, env = "ICEBERG_NAMESPACE", default_value = "vuke")]
+        iceberg_namespace: String,
+
+        /// Iceberg table name (default: results)
+        #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
+        iceberg_table: String,
     },
 
     /// Scan for specific addresses
@@ -197,6 +209,18 @@ enum Command {
         /// Stop on first cloud upload failure (default: continue and report)
         #[arg(long)]
         cloud_fail_fast: bool,
+
+        /// Iceberg REST catalog URL (requires 'storage-iceberg' feature)
+        #[arg(long, env = "ICEBERG_CATALOG")]
+        iceberg_catalog: Option<String>,
+
+        /// Iceberg namespace (default: vuke)
+        #[arg(long, env = "ICEBERG_NAMESPACE", default_value = "vuke")]
+        iceberg_namespace: String,
+
+        /// Iceberg table name (default: results)
+        #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
+        iceberg_table: String,
     },
 
     /// Generate single key from passphrase
@@ -364,6 +388,9 @@ fn main() -> Result<()> {
             cloud_bucket,
             cloud_delete_local,
             cloud_fail_fast,
+            iceberg_catalog,
+            iceberg_namespace,
+            iceberg_table,
         } => {
             let _network = parse_network(&network);
 
@@ -382,6 +409,9 @@ fn main() -> Result<()> {
                 cloud_bucket,
                 cloud_delete_local,
                 cloud_fail_fast,
+                iceberg_catalog,
+                iceberg_namespace,
+                iceberg_table,
             )
         }
 
@@ -401,6 +431,9 @@ fn main() -> Result<()> {
             cloud_bucket,
             cloud_delete_local,
             cloud_fail_fast,
+            iceberg_catalog,
+            iceberg_namespace,
+            iceberg_table,
         } => run_scan(
             source,
             transform,
@@ -416,6 +449,9 @@ fn main() -> Result<()> {
             cloud_bucket,
             cloud_delete_local,
             cloud_fail_fast,
+            iceberg_catalog,
+            iceberg_namespace,
+            iceberg_table,
         ),
 
         Command::Single {
@@ -487,6 +523,9 @@ fn run_generate(
     cloud_bucket: Option<String>,
     cloud_delete_local: bool,
     cloud_fail_fast: bool,
+    iceberg_catalog: Option<String>,
+    iceberg_namespace: String,
+    iceberg_table: String,
 ) -> Result<()> {
     let source = create_source(source_cmd)?;
     let transform_instances = create_transforms(transforms.clone());
@@ -569,13 +608,25 @@ fn run_generate(
     #[cfg(feature = "storage-cloud")]
     if cloud_upload {
         #[cfg(feature = "storage")]
-        perform_cloud_upload(
-            written_paths,
-            cloud_endpoint,
-            cloud_bucket,
-            cloud_delete_local,
-            cloud_fail_fast,
-        )?;
+        {
+            perform_cloud_upload(
+                written_paths.clone(),
+                cloud_endpoint,
+                cloud_bucket,
+                cloud_delete_local,
+                cloud_fail_fast,
+            )?;
+
+            #[cfg(feature = "storage-iceberg")]
+            if let Some(ref catalog_url) = iceberg_catalog {
+                perform_iceberg_registration(
+                    &written_paths,
+                    catalog_url,
+                    &iceberg_namespace,
+                    &iceberg_table,
+                )?;
+            }
+        }
 
         #[cfg(not(feature = "storage"))]
         anyhow::bail!("--cloud-upload requires --storage to be specified");
@@ -589,6 +640,9 @@ fn run_generate(
         cloud_bucket,
         cloud_delete_local,
         cloud_fail_fast,
+        iceberg_catalog,
+        iceberg_namespace,
+        iceberg_table,
     );
 
     #[cfg(not(feature = "storage"))]
@@ -598,6 +652,9 @@ fn run_generate(
         cloud_bucket,
         cloud_delete_local,
         cloud_fail_fast,
+        iceberg_catalog,
+        iceberg_namespace,
+        iceberg_table,
     );
 
     Ok(())
@@ -618,6 +675,9 @@ fn run_scan(
     cloud_bucket: Option<String>,
     cloud_delete_local: bool,
     cloud_fail_fast: bool,
+    iceberg_catalog: Option<String>,
+    iceberg_namespace: String,
+    iceberg_table: String,
 ) -> Result<()> {
     let matcher = match vuke::provider::resolve(&targets)? {
         Some(result) => {
@@ -716,13 +776,25 @@ fn run_scan(
     #[cfg(feature = "storage-cloud")]
     if cloud_upload {
         #[cfg(feature = "storage")]
-        perform_cloud_upload(
-            written_paths,
-            cloud_endpoint,
-            cloud_bucket,
-            cloud_delete_local,
-            cloud_fail_fast,
-        )?;
+        {
+            perform_cloud_upload(
+                written_paths.clone(),
+                cloud_endpoint,
+                cloud_bucket,
+                cloud_delete_local,
+                cloud_fail_fast,
+            )?;
+
+            #[cfg(feature = "storage-iceberg")]
+            if let Some(ref catalog_url) = iceberg_catalog {
+                perform_iceberg_registration(
+                    &written_paths,
+                    catalog_url,
+                    &iceberg_namespace,
+                    &iceberg_table,
+                )?;
+            }
+        }
 
         #[cfg(not(feature = "storage"))]
         anyhow::bail!("--cloud-upload requires --storage to be specified");
@@ -736,6 +808,9 @@ fn run_scan(
         cloud_bucket,
         cloud_delete_local,
         cloud_fail_fast,
+        iceberg_catalog,
+        iceberg_namespace,
+        iceberg_table,
     );
 
     #[cfg(not(feature = "storage"))]
@@ -745,6 +820,9 @@ fn run_scan(
         cloud_bucket,
         cloud_delete_local,
         cloud_fail_fast,
+        iceberg_catalog,
+        iceberg_namespace,
+        iceberg_table,
     );
 
     Ok(())
@@ -923,6 +1001,47 @@ fn perform_cloud_upload(
             );
         }
     }
+
+    Ok(())
+}
+
+#[cfg(feature = "storage-iceberg")]
+fn perform_iceberg_registration(
+    paths: &[PathBuf],
+    catalog_url: &str,
+    namespace: &str,
+    table_name: &str,
+) -> Result<()> {
+    use tokio::runtime::Runtime;
+    use vuke::storage::{CloudCredentials, IcebergConfig, RestCatalogClient};
+
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let credentials = CloudCredentials::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to get credentials for Iceberg: {}", e))?;
+
+    let config = IcebergConfig::new(catalog_url)
+        .with_namespace(namespace)
+        .with_table_name(table_name);
+
+    let client = RestCatalogClient::new(config, credentials);
+
+    eprintln!(
+        "\nRegistering {} files in Iceberg catalog {}...",
+        paths.len(),
+        catalog_url
+    );
+
+    let rt =
+        Runtime::new().map_err(|e| anyhow::anyhow!("Failed to create tokio runtime: {}", e))?;
+    let result = rt.block_on(client.register_parquet_files(paths))?;
+
+    eprintln!(
+        "Iceberg registration complete: snapshot_id={}, files={}",
+        result.snapshot_id, result.files_registered
+    );
 
     Ok(())
 }
