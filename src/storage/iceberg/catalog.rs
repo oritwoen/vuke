@@ -1,13 +1,14 @@
 use std::collections::HashMap;
-use std::path::Path;
 
+use iceberg::spec::{DataContentType, DataFileBuilder, DataFileFormat, Struct};
+use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_catalog_rest::RestCatalogBuilder;
 
 use super::error::IcebergError;
 use super::partition::build_partition_spec;
 use super::schema::build_iceberg_schema;
-use super::{IcebergConfig, SnapshotInfo};
+use super::{FileMetadata, IcebergConfig, SnapshotInfo};
 use crate::storage::CloudCredentials;
 
 pub struct RestCatalogClient {
@@ -25,8 +26,15 @@ impl RestCatalogClient {
 
     pub async fn register_parquet_files(
         &self,
-        parquet_paths: &[impl AsRef<Path>],
+        files: &[FileMetadata],
     ) -> Result<SnapshotInfo, IcebergError> {
+        if files.is_empty() {
+            return Ok(SnapshotInfo {
+                snapshot_id: 0,
+                files_registered: 0,
+            });
+        }
+
         let catalog = self.build_catalog().await?;
         let namespace = NamespaceIdent::from_strs([&self.config.namespace])
             .map_err(|e| IcebergError::InvalidConfig(format!("invalid namespace: {e}")))?;
@@ -44,11 +52,43 @@ impl RestCatalogClient {
             Err(e) => return Err(IcebergError::CatalogConnection(format!("check table: {e}"))),
         };
 
-        let snapshot_id = table.metadata().current_snapshot_id().unwrap_or_default();
+        let partition_spec_id = table.metadata().default_partition_spec_id();
+
+        let data_files: Vec<_> = files
+            .iter()
+            .map(|file| {
+                DataFileBuilder::default()
+                    .content(DataContentType::Data)
+                    .file_path(file.uri.clone())
+                    .file_format(DataFileFormat::Parquet)
+                    .file_size_in_bytes(file.file_size)
+                    .record_count(file.record_count)
+                    .partition_spec_id(partition_spec_id)
+                    .partition(Struct::empty())
+                    .build()
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| IcebergError::SnapshotCommit(format!("build data file: {e}")))?;
+
+        let tx = Transaction::new(&table);
+        let append_action = tx.fast_append().add_data_files(data_files);
+        let tx = append_action
+            .apply(tx)
+            .map_err(|e| IcebergError::SnapshotCommit(format!("apply append: {e}")))?;
+
+        let updated_table = tx
+            .commit(&catalog)
+            .await
+            .map_err(|e| IcebergError::SnapshotCommit(format!("commit transaction: {e}")))?;
+
+        let snapshot_id = updated_table
+            .metadata()
+            .current_snapshot_id()
+            .unwrap_or_default();
 
         Ok(SnapshotInfo {
             snapshot_id,
-            files_registered: parquet_paths.len(),
+            files_registered: files.len(),
         })
     }
 
@@ -136,5 +176,18 @@ mod tests {
         let client = RestCatalogClient::new(config, credentials);
 
         assert_eq!(client.config.namespace, "custom");
+    }
+
+    #[test]
+    fn file_metadata_creation() {
+        let meta = FileMetadata {
+            uri: "s3://bucket/path/file.parquet".to_string(),
+            file_size: 1024,
+            record_count: 100,
+        };
+
+        assert_eq!(meta.uri, "s3://bucket/path/file.parquet");
+        assert_eq!(meta.file_size, 1024);
+        assert_eq!(meta.record_count, 100);
     }
 }

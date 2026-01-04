@@ -41,6 +41,17 @@ pub struct SnapshotInfo {
     pub files_registered: usize,
 }
 
+/// Metadata about a Parquet file to register with Iceberg
+#[derive(Debug, Clone)]
+pub struct FileMetadata {
+    /// Cloud URI (e.g., s3://bucket/path/file.parquet)
+    pub uri: String,
+    /// File size in bytes
+    pub file_size: u64,
+    /// Number of records in the file
+    pub record_count: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

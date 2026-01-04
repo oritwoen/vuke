@@ -609,9 +609,9 @@ fn run_generate(
     if cloud_upload {
         #[cfg(feature = "storage")]
         {
-            perform_cloud_upload(
+            let upload_result = perform_cloud_upload(
                 written_paths.clone(),
-                cloud_endpoint,
+                cloud_endpoint.clone(),
                 cloud_bucket,
                 cloud_delete_local,
                 cloud_fail_fast,
@@ -619,12 +619,16 @@ fn run_generate(
 
             #[cfg(feature = "storage-iceberg")]
             if let Some(ref catalog_url) = iceberg_catalog {
-                perform_iceberg_registration(
-                    &written_paths,
-                    catalog_url,
-                    &iceberg_namespace,
-                    &iceberg_table,
-                )?;
+                if let Some(ref result) = upload_result {
+                    perform_iceberg_registration(
+                        &result.cloud_paths,
+                        &written_paths,
+                        result.endpoint.as_deref(),
+                        catalog_url,
+                        &iceberg_namespace,
+                        &iceberg_table,
+                    )?;
+                }
             }
         }
 
@@ -777,9 +781,9 @@ fn run_scan(
     if cloud_upload {
         #[cfg(feature = "storage")]
         {
-            perform_cloud_upload(
+            let upload_result = perform_cloud_upload(
                 written_paths.clone(),
-                cloud_endpoint,
+                cloud_endpoint.clone(),
                 cloud_bucket,
                 cloud_delete_local,
                 cloud_fail_fast,
@@ -787,12 +791,16 @@ fn run_scan(
 
             #[cfg(feature = "storage-iceberg")]
             if let Some(ref catalog_url) = iceberg_catalog {
-                perform_iceberg_registration(
-                    &written_paths,
-                    catalog_url,
-                    &iceberg_namespace,
-                    &iceberg_table,
-                )?;
+                if let Some(ref result) = upload_result {
+                    perform_iceberg_registration(
+                        &result.cloud_paths,
+                        &written_paths,
+                        result.endpoint.as_deref(),
+                        catalog_url,
+                        &iceberg_namespace,
+                        &iceberg_table,
+                    )?;
+                }
             }
         }
 
@@ -912,20 +920,26 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 #[cfg(feature = "storage-cloud")]
+struct CloudUploadResult {
+    cloud_paths: Vec<vuke::storage::CloudPath>,
+    endpoint: Option<String>,
+}
+
+#[cfg(feature = "storage-cloud")]
 fn perform_cloud_upload(
     paths: Vec<PathBuf>,
     endpoint: Option<String>,
     bucket: Option<String>,
     delete_local: bool,
     fail_fast: bool,
-) -> Result<()> {
+) -> Result<Option<CloudUploadResult>> {
     use std::sync::Arc;
     use vuke::storage::cloud::{
         sync_to_cloud_blocking, CloudConfig, S3CloudUploader, StatsProgress,
     };
 
     if paths.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
     let bucket = bucket.ok_or_else(|| {
@@ -960,7 +974,6 @@ fn perform_cloud_upload(
         }
 
         if delete_local {
-            // Only delete files that were successfully uploaded
             let uploaded_keys: std::collections::HashSet<_> = result
                 .completed
                 .iter()
@@ -978,6 +991,11 @@ fn perform_cloud_upload(
                 eprintln!("Deleted {} local files", deleted);
             }
         }
+
+        Ok(Some(CloudUploadResult {
+            cloud_paths: result.completed,
+            endpoint,
+        }))
     } else {
         eprintln!(
             "Cloud upload completed with errors: {} succeeded, {} failed",
@@ -1000,22 +1018,27 @@ fn perform_cloud_upload(
                 paths.len()
             );
         }
-    }
 
-    Ok(())
+        Ok(Some(CloudUploadResult {
+            cloud_paths: result.completed,
+            endpoint,
+        }))
+    }
 }
 
 #[cfg(feature = "storage-iceberg")]
 fn perform_iceberg_registration(
-    paths: &[PathBuf],
+    cloud_paths: &[vuke::storage::CloudPath],
+    local_paths: &[PathBuf],
+    endpoint: Option<&str>,
     catalog_url: &str,
     namespace: &str,
     table_name: &str,
 ) -> Result<()> {
     use tokio::runtime::Runtime;
-    use vuke::storage::{CloudCredentials, IcebergConfig, RestCatalogClient};
+    use vuke::storage::{CloudCredentials, FileMetadata, IcebergConfig, RestCatalogClient};
 
-    if paths.is_empty() {
+    if cloud_paths.is_empty() {
         return Ok(());
     }
 
@@ -1028,15 +1051,35 @@ fn perform_iceberg_registration(
 
     let client = RestCatalogClient::new(config, credentials);
 
+    let files: Vec<FileMetadata> = cloud_paths
+        .iter()
+        .zip(local_paths.iter())
+        .filter_map(|(cloud_path, local_path)| {
+            let file_size = std::fs::metadata(local_path).ok()?.len();
+            let record_count = extract_parquet_record_count(local_path).unwrap_or(0);
+
+            Some(FileMetadata {
+                uri: cloud_path.url(endpoint),
+                file_size,
+                record_count,
+            })
+        })
+        .collect();
+
+    if files.is_empty() {
+        eprintln!("Warning: No valid files to register with Iceberg");
+        return Ok(());
+    }
+
     eprintln!(
         "\nRegistering {} files in Iceberg catalog {}...",
-        paths.len(),
+        files.len(),
         catalog_url
     );
 
     let rt =
         Runtime::new().map_err(|e| anyhow::anyhow!("Failed to create tokio runtime: {}", e))?;
-    let result = rt.block_on(client.register_parquet_files(paths))?;
+    let result = rt.block_on(client.register_parquet_files(&files))?;
 
     eprintln!(
         "Iceberg registration complete: snapshot_id={}, files={}",
@@ -1044,6 +1087,18 @@ fn perform_iceberg_registration(
     );
 
     Ok(())
+}
+
+#[cfg(feature = "storage-iceberg")]
+fn extract_parquet_record_count(path: &PathBuf) -> Option<u64> {
+    use parquet::file::reader::{FileReader, SerializedFileReader};
+    use std::fs::File;
+
+    let file = File::open(path).ok()?;
+    let reader = SerializedFileReader::new(file).ok()?;
+    let metadata = reader.metadata();
+
+    Some(metadata.file_metadata().num_rows() as u64)
 }
 
 #[cfg(feature = "storage-query")]
