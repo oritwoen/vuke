@@ -64,7 +64,9 @@ impl Matcher {
             targets: addresses.into_iter().collect(),
         }
     }
+}
 
+impl Matcher {
     /// Check if any derived address matches targets.
     /// Returns MatchInfo if found.
     pub fn check(&self, derived: &DerivedKey) -> Option<MatchInfo> {
@@ -115,19 +117,17 @@ mod tests {
     fn test_matcher_check() {
         // Known key: "correct horse battery staple" SHA256
         let key: [u8; 32] = [
-            0xc4, 0xbb, 0xcb, 0x1f, 0xbe, 0xc9, 0x9d, 0x65,
-            0xbf, 0x59, 0xd8, 0x5c, 0x8c, 0xb6, 0x2e, 0xe2,
-            0xdb, 0x96, 0x3f, 0x0f, 0xe1, 0x06, 0xf4, 0x83,
-            0xd9, 0xaf, 0xa7, 0x3b, 0xd4, 0xe3, 0x9a, 0x8a,
+            0xc4, 0xbb, 0xcb, 0x1f, 0xbe, 0xc9, 0x9d, 0x65, 0xbf, 0x59, 0xd8, 0x5c, 0x8c, 0xb6,
+            0x2e, 0xe2, 0xdb, 0x96, 0x3f, 0x0f, 0xe1, 0x06, 0xf4, 0x83, 0xd9, 0xaf, 0xa7, 0x3b,
+            0xd4, 0xe3, 0x9a, 0x8a,
         ];
 
         let deriver = KeyDeriver::new();
         let derived = deriver.derive(&key);
 
         // Should match uncompressed P2PKH
-        let matcher = Matcher::from_addresses(vec![
-            "1JwSSubhmg6iPtRjtyqhUYYH7bZg3Lfy1T".to_string(),
-        ]);
+        let matcher =
+            Matcher::from_addresses(vec!["1JwSSubhmg6iPtRjtyqhUYYH7bZg3Lfy1T".to_string()]);
 
         let result = matcher.check(&derived);
         assert!(result.is_some());
@@ -143,9 +143,7 @@ mod tests {
         let deriver = KeyDeriver::new();
         let derived = deriver.derive(&key);
 
-        let matcher = Matcher::from_addresses(vec![
-            "1NonExistentAddress".to_string(),
-        ]);
+        let matcher = Matcher::from_addresses(vec!["1NonExistentAddress".to_string()]);
 
         assert!(matcher.check(&derived).is_none());
     }
