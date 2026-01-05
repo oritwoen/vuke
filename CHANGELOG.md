@@ -1,3 +1,19 @@
+## [0.9.0] - 2026-01-05
+
+### 🚀 Features
+
+- *(storage)* Add DuckDB query executor (#48)
+- *(storage)* Add query subcommand (#49)
+- *(storage)* Add configurable compression (#51)
+- *(storage)* Add cloud upload (#53)
+- *(provider)* Add data provider system (#56)
+- *(storage)* Add Iceberg catalog registration (#57)
+- *(transform)* Add bitimage transform (#58)
+
+### ⚙️ Miscellaneous Tasks
+
+- Add `deepwiki` badge`
+- Add `context7.json`
 ## [0.8.0] - 2025-12-31
 
 ### 🚀 Features
@@ -13,6 +29,10 @@
 
 - Add AGENTS.md knowledge base files
 - Refresh AGENTS.md knowledge base
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* V0.8.0
 ## [0.7.0] - 2025-12-31
 
 ### 🚀 Features
