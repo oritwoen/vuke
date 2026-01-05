@@ -2,6 +2,8 @@
 
 #[cfg(feature = "storage-cloud")]
 pub mod cloud;
+#[cfg(feature = "storage-iceberg")]
+pub mod iceberg;
 mod parquet_backend;
 #[cfg(feature = "storage-query")]
 mod query;
@@ -9,9 +11,13 @@ mod schema;
 
 #[cfg(feature = "storage-cloud")]
 pub use cloud::{
-    sync_to_cloud_blocking, BatchUploader, CloudConfig, CloudError, CloudPath, CloudSyncManager,
-    CloudUploader, NoOpProgress, S3CloudUploader, StatsProgress, SyncResult, UploadProgress,
-    UploadStats,
+    sync_to_cloud_blocking, BatchUploader, CloudConfig, CloudCredentials, CloudError, CloudPath,
+    CloudSyncManager, CloudUploader, NoOpProgress, S3CloudUploader, StatsProgress, SyncResult,
+    UploadProgress, UploadStats,
+};
+#[cfg(feature = "storage-iceberg")]
+pub use iceberg::{
+    FileMetadata, IcebergConfig, IcebergError, PartitionValues, RestCatalogClient, SnapshotInfo,
 };
 pub use parquet_backend::ParquetBackend;
 #[cfg(feature = "storage-query")]

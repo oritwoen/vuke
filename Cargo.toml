@@ -15,6 +15,7 @@ gpu = ["wgpu", "pollster", "bytemuck"]
 storage = ["parquet", "arrow"]
 storage-query = ["storage", "duckdb", "comfy-table"]
 storage-cloud = ["storage", "object_store", "tokio", "async-trait", "futures"]
+storage-iceberg = ["storage-cloud", "iceberg", "iceberg-catalog-rest"]
 boha = ["dep:boha"]
 
 [dependencies]
@@ -55,6 +56,10 @@ object_store = { version = "0.11", optional = true, features = ["aws"] }
 tokio = { version = "1", optional = true, features = ["rt-multi-thread", "sync", "time"] }
 async-trait = { version = "0.1", optional = true }
 futures = { version = "0.3", optional = true }
+
+# Iceberg catalog (optional)
+iceberg = { version = "0.7", optional = true }
+iceberg-catalog-rest = { version = "0.7", optional = true }
 
 # Puzzle data (optional)
 boha = { version = "0.11", optional = true }
