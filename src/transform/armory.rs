@@ -4,10 +4,10 @@
 //! Armory was an early Bitcoin wallet that used a custom HD derivation scheme
 //! before BIP32 was standardized.
 
-use sha2::{Digest, Sha256};
+use super::{Input, Key, Transform};
 use hmac::{Hmac, Mac};
 use secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
-use super::{Input, Key, Transform};
+use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -48,7 +48,12 @@ impl ArmoryTransform {
     }
 
     /// Advance key by n steps using Armory derivation
-    fn advance_key(&self, mut key: SecretKey, chaincode: &[u8; 32], steps: usize) -> Option<SecretKey> {
+    fn advance_key(
+        &self,
+        mut key: SecretKey,
+        chaincode: &[u8; 32],
+        steps: usize,
+    ) -> Option<SecretKey> {
         for _ in 0..steps {
             let pubkey = PublicKey::from_secret_key(&self.secp, &key);
             let pubkey_bytes = pubkey.serialize_uncompressed();

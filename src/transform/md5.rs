@@ -1,7 +1,7 @@
 //! MD5 transform - hash input and expand to 32 bytes.
 
-use md5::{Digest, Md5};
 use super::{Input, Key, Transform};
+use md5::{Digest, Md5};
 
 pub struct Md5Transform;
 
@@ -33,7 +33,7 @@ impl Transform for Md5Transform {
         inputs: &[Input],
         output: &mut Vec<(String, Key)>,
     ) -> Result<(), crate::gpu::GpuError> {
-        use crate::gpu::{GpuHashPipeline, hash::HashAlgorithm};
+        use crate::gpu::{hash::HashAlgorithm, GpuHashPipeline};
 
         let pipeline = GpuHashPipeline::new(ctx)?;
         let result = pipeline.process_batch(HashAlgorithm::Md5, inputs)?;

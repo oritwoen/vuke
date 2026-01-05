@@ -52,7 +52,9 @@ impl Source for RangeSource {
 
                     if let Some(m) = matcher {
                         if let Some(match_info) = m.check(&derived) {
-                            output.hit(source, transform.name(), &derived, &match_info).ok();
+                            output
+                                .hit(source, transform.name(), &derived, &match_info)
+                                .ok();
                             matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     } else {

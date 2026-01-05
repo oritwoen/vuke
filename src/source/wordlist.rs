@@ -48,7 +48,10 @@ impl Source for WordlistSource {
         let matches = std::sync::atomic::AtomicU64::new(0);
 
         self.lines.par_chunks(1000).for_each(|chunk| {
-            let inputs: Vec<Input> = chunk.iter().map(|s| Input::from_string(s.clone())).collect();
+            let inputs: Vec<Input> = chunk
+                .iter()
+                .map(|s| Input::from_string(s.clone()))
+                .collect();
             let mut buffer = Vec::with_capacity(inputs.len() * 2);
 
             for transform in transforms {
@@ -60,7 +63,9 @@ impl Source for WordlistSource {
 
                     if let Some(m) = matcher {
                         if let Some(match_info) = m.check(&derived) {
-                            output.hit(source, transform.name(), &derived, &match_info).ok();
+                            output
+                                .hit(source, transform.name(), &derived, &match_info)
+                                .ok();
                             matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     } else {

@@ -1,7 +1,7 @@
 //! Xorshift transform - generates keys using xorshift PRNG variants.
 
-use crate::xorshift::{generate_key, XorshiftVariant, ALL_VARIANTS};
 use super::{Input, Key, Transform};
+use crate::xorshift::{generate_key, XorshiftVariant, ALL_VARIANTS};
 
 pub struct XorshiftTransform {
     variant: Option<XorshiftVariant>,

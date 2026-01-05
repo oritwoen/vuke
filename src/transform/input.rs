@@ -13,6 +13,8 @@ pub struct Input {
     pub bytes_be: Option<[u8; 8]>,
     /// Little-endian bytes (8 bytes)
     pub bytes_le: Option<[u8; 8]>,
+    /// Arbitrary binary data (for file-based transforms like bitimage)
+    pub blob: Option<Vec<u8>>,
 }
 
 impl Input {
@@ -23,6 +25,7 @@ impl Input {
             string_val: val.to_string(),
             bytes_be: Some(val.to_be_bytes()),
             bytes_le: Some(val.to_le_bytes()),
+            blob: None,
         }
     }
 
@@ -33,6 +36,22 @@ impl Input {
             string_val: s,
             bytes_be: None,
             bytes_le: None,
+            blob: None,
+        }
+    }
+
+    /// Create input from arbitrary bytes (for file-based transforms)
+    ///
+    /// # Arguments
+    /// * `data` - The binary data (e.g., file contents)
+    /// * `label` - Human-readable source description (e.g., file path)
+    pub fn from_blob(data: Vec<u8>, label: String) -> Self {
+        Self {
+            u64_val: None,
+            string_val: label,
+            bytes_be: None,
+            bytes_le: None,
+            blob: Some(data),
         }
     }
 }

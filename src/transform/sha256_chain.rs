@@ -1,7 +1,7 @@
+use super::{Input, Key, Transform};
 use crate::sha256_chain::{
     generate_chain_from_string, Sha256ChainVariant, ALL_VARIANTS, DEFAULT_CHAIN_DEPTH,
 };
-use super::{Input, Key, Transform};
 
 pub struct Sha256ChainTransform {
     variant: Option<Sha256ChainVariant>,
@@ -46,8 +46,12 @@ impl Transform for Sha256ChainTransform {
     fn name(&self) -> &'static str {
         match self.variant {
             Some(Sha256ChainVariant::Iterated) => "sha256_chain:iterated",
-            Some(Sha256ChainVariant::IndexedBinary { big_endian: true }) => "sha256_chain:indexed:be",
-            Some(Sha256ChainVariant::IndexedBinary { big_endian: false }) => "sha256_chain:indexed:le",
+            Some(Sha256ChainVariant::IndexedBinary { big_endian: true }) => {
+                "sha256_chain:indexed:be"
+            }
+            Some(Sha256ChainVariant::IndexedBinary { big_endian: false }) => {
+                "sha256_chain:indexed:le"
+            }
             Some(Sha256ChainVariant::IndexedString) => "sha256_chain:counter",
             None => "sha256_chain",
         }
@@ -74,7 +78,11 @@ impl Transform for Sha256ChainTransform {
                 }
                 let seed_bytes = (num_val as u32).to_be_bytes();
                 for variant in &variants {
-                    let chain = crate::sha256_chain::generate_chain(&seed_bytes, *variant, self.chain_depth);
+                    let chain = crate::sha256_chain::generate_chain(
+                        &seed_bytes,
+                        *variant,
+                        self.chain_depth,
+                    );
 
                     for (idx, key) in chain.iter().enumerate() {
                         let source = format!("{}[{}:{}]", input.string_val, variant.name(), idx);
@@ -103,11 +111,17 @@ mod tests {
             "sha256_chain:iterated"
         );
         assert_eq!(
-            Sha256ChainTransform::with_variant(Sha256ChainVariant::IndexedBinary { big_endian: true }).name(),
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::IndexedBinary {
+                big_endian: true
+            })
+            .name(),
             "sha256_chain:indexed:be"
         );
         assert_eq!(
-            Sha256ChainTransform::with_variant(Sha256ChainVariant::IndexedBinary { big_endian: false }).name(),
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::IndexedBinary {
+                big_endian: false
+            })
+            .name(),
             "sha256_chain:indexed:le"
         );
         assert_eq!(
@@ -124,8 +138,8 @@ mod tests {
 
     #[test]
     fn test_transform_generates_keys() {
-        let transform = Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated)
-            .with_chain_depth(3);
+        let transform =
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated).with_chain_depth(3);
         let input = Input::from_string("test_seed".to_string());
 
         let mut output = Vec::new();
@@ -150,8 +164,8 @@ mod tests {
 
     #[test]
     fn test_transform_deterministic() {
-        let transform = Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated)
-            .with_chain_depth(2);
+        let transform =
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated).with_chain_depth(2);
         let input = Input::from_string("deterministic".to_string());
 
         let mut output1 = Vec::new();
@@ -168,8 +182,8 @@ mod tests {
 
     #[test]
     fn test_transform_numeric_input() {
-        let transform = Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated)
-            .with_chain_depth(2);
+        let transform =
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated).with_chain_depth(2);
         let mut input = Input::from_string("12345".to_string());
         input.u64_val = Some(12345);
 
@@ -181,8 +195,8 @@ mod tests {
 
     #[test]
     fn test_transform_keys_match_shared_logic() {
-        let transform = Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated)
-            .with_chain_depth(3);
+        let transform =
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated).with_chain_depth(3);
         let input = Input::from_string("verification".to_string());
 
         let mut output = Vec::new();
@@ -197,8 +211,8 @@ mod tests {
 
     #[test]
     fn test_transform_zero_depth() {
-        let transform = Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated)
-            .with_chain_depth(0);
+        let transform =
+            Sha256ChainTransform::with_variant(Sha256ChainVariant::Iterated).with_chain_depth(0);
         let input = Input::from_string("seed".to_string());
 
         let mut output = Vec::new();

@@ -1,7 +1,7 @@
 //! SHA256 transform - hash input to get private key.
 
-use sha2::{Digest, Sha256};
 use super::{Input, Key, Transform};
+use sha2::{Digest, Sha256};
 
 pub struct Sha256Transform;
 
@@ -40,7 +40,7 @@ impl Transform for Sha256Transform {
         inputs: &[Input],
         output: &mut Vec<(String, Key)>,
     ) -> Result<(), crate::gpu::GpuError> {
-        use crate::gpu::{GpuHashPipeline, hash::HashAlgorithm};
+        use crate::gpu::{hash::HashAlgorithm, GpuHashPipeline};
 
         let pipeline = GpuHashPipeline::new(ctx)?;
         let result = pipeline.process_batch(HashAlgorithm::Sha256, inputs)?;
@@ -50,7 +50,10 @@ impl Transform for Sha256Transform {
         }
 
         for input in result.cpu_fallback {
-            output.push((input.string_val.clone(), Sha256::digest(input.string_val.as_bytes()).into()));
+            output.push((
+                input.string_val.clone(),
+                Sha256::digest(input.string_val.as_bytes()).into(),
+            ));
         }
 
         for input in inputs {

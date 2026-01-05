@@ -1,7 +1,7 @@
 //! Double SHA256 transform - SHA256(SHA256(input)).
 
-use sha2::{Digest, Sha256};
 use super::{Input, Key, Transform};
+use sha2::{Digest, Sha256};
 
 pub struct DoubleSha256Transform;
 
@@ -44,7 +44,7 @@ impl Transform for DoubleSha256Transform {
         inputs: &[Input],
         output: &mut Vec<(String, Key)>,
     ) -> Result<(), crate::gpu::GpuError> {
-        use crate::gpu::{GpuHashPipeline, hash::HashAlgorithm};
+        use crate::gpu::{hash::HashAlgorithm, GpuHashPipeline};
 
         let pipeline = GpuHashPipeline::new(ctx)?;
         let result = pipeline.process_batch(HashAlgorithm::DoubleSha256, inputs)?;

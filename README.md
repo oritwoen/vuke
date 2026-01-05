@@ -154,6 +154,25 @@ vuke generate --transform=xorshift:xoroshiro range --start 1 --end 1000
 vuke scan --transform=sha256 --targets addresses.txt timestamps --start 2015-01-01 --end 2015-01-31
 ```
 
+### Derive keys from files (Bitimage)
+
+```bash
+# Generate key from a single file
+vuke generate --transform=bitimage files --file image.jpg
+
+# Scan directory recursively
+vuke generate --transform=bitimage files --dir ./images/
+
+# With custom derivation path and passphrase
+vuke generate --transform=bitimage --bitimage-path "m/44'/0'/0'/0/0" --bitimage-passphrase "secret" files --file photo.png
+
+# Derive multiple addresses per file
+vuke generate --transform=bitimage --bitimage-derive-count 10 files --dir ./data/
+
+# Brute-force passphrases from wordlist
+vuke scan --transform=bitimage --bitimage-passphrase-wordlist passphrases.txt --targets addresses.txt files --dir ./images/
+```
+
 ### Multiple transforms
 
 ```bash
@@ -597,6 +616,7 @@ vuke generate --transform=sha256_chain:iterated --chain-depth 10 range --start 1
 | `lcg[:variant][:endian]` | LCG PRNG with 32-bit seed | Legacy C stdlib rand() |
 | `xorshift[:variant]` | Xorshift PRNG with 64-bit seed | V8/SpiderMonkey Math.random() |
 | `sha256_chain[:variant]` | Deterministic SHA256 chain | Iterated/indexed key derivation |
+| `bitimage` | File→base64→SHA256→BIP39→HD | Bitimage puzzle key derivation |
 
 ## Supported Analyzers
 
@@ -653,6 +673,7 @@ src/
 ├── multibit.rs      # MultiBit HD bug logic (PBKDF2, BIP32)
 ├── electrum.rs      # Electrum pre-BIP39 deterministic derivation
 ├── sha256_chain.rs  # SHA256 chain shared logic (iterated/indexed)
+├── bitimage.rs      # Bitimage puzzle derivation logic
 ├── analyze/
 │   ├── mod.rs       # Analyzer trait and types
 │   ├── key_parser.rs # Parse hex/WIF/decimal keys
@@ -670,7 +691,8 @@ src/
 │   ├── range.rs     # Numeric range source
 │   ├── wordlist.rs  # File-based wordlist
 │   ├── timestamps.rs # Date range → Unix timestamps
-│   └── stdin.rs     # Streaming from stdin
+│   ├── stdin.rs     # Streaming from stdin
+│   └── files.rs     # File/directory source for binary data
 ├── storage/
 │   ├── mod.rs       # StorageBackend trait
 │   ├── parquet_backend.rs # Parquet file writer
@@ -696,6 +718,7 @@ src/
 │   ├── lcg.rs       # LCG PRNG transform
 │   ├── xorshift.rs  # Xorshift PRNG transform
 │   ├── sha256_chain.rs # SHA256 chain transform
+│   ├── bitimage.rs  # File-derived HD keys (Bitimage puzzle)
 │   └── armory.rs    # Armory HD derivation
 └── output/
     ├── mod.rs       # Output trait
