@@ -99,6 +99,7 @@ impl Source for FilesSource {
         pb.set_style(crate::default_progress_style());
 
         let deriver = KeyDeriver::new();
+        let processed = std::sync::atomic::AtomicU64::new(0);
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
 
@@ -112,6 +113,7 @@ impl Source for FilesSource {
                 }
             };
 
+            processed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let label = path.display().to_string();
             let input = Input::from_blob(contents, label);
             let inputs = [input];
@@ -145,7 +147,7 @@ impl Source for FilesSource {
         pb.finish_and_clear();
 
         Ok(ProcessStats {
-            inputs_processed: self.files.len() as u64,
+            inputs_processed: processed.load(std::sync::atomic::Ordering::Relaxed),
             keys_generated: stats.load(std::sync::atomic::Ordering::Relaxed),
             matches_found: matches.load(std::sync::atomic::Ordering::Relaxed),
         })
