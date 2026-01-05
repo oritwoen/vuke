@@ -105,7 +105,8 @@ impl Source for FilesSource {
         self.files.par_iter().for_each(|path| {
             let contents = match read_file_contents(path) {
                 Ok(c) => c,
-                Err(_) => {
+                Err(e) => {
+                    eprintln!("Warning: Failed to read '{}': {}", path.display(), e);
                     pb.inc(1);
                     return;
                 }

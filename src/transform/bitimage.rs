@@ -34,14 +34,31 @@ impl BitimageTransform {
     }
 
     pub fn with_passphrase_wordlist(&mut self, path: PathBuf) -> std::io::Result<()> {
-        let file = File::open(path)?;
+        let file = File::open(&path)?;
         let reader = BufReader::new(file);
-        let words: Vec<String> = reader
-            .lines()
-            .filter_map(Result::ok)
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
+        let mut words = Vec::new();
+        let mut line_num = 0;
+
+        for line_result in reader.lines() {
+            line_num += 1;
+            match line_result {
+                Ok(line) => {
+                    let trimmed = line.trim().to_string();
+                    if !trimmed.is_empty() {
+                        words.push(trimmed);
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to read line {} in '{}': {}",
+                        line_num,
+                        path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
         self.passphrase_wordlist = Some(words);
         Ok(())
     }

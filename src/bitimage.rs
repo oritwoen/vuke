@@ -103,6 +103,13 @@ fn parse_derivation_path(path: &str) -> Result<Vec<(u32, bool)>, BitimageError> 
             .parse()
             .map_err(|_| BitimageError::InvalidPath(format!("Invalid index: {}", component)))?;
 
+        if index >= 0x8000_0000 {
+            return Err(BitimageError::InvalidPath(format!(
+                "Index {} exceeds BIP32 limit (must be < 2^31)",
+                index
+            )));
+        }
+
         result.push((index, hardened));
     }
 
@@ -351,5 +358,21 @@ mod tests {
         let key1 = deriver.derive_path("m/84'/0'/0'/0/1").unwrap();
 
         assert_ne!(key0, key1);
+    }
+
+    #[test]
+    fn test_parse_derivation_path_index_overflow() {
+        let result = parse_derivation_path("m/2147483648'/0'/0'/0/0");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds BIP32 limit"));
+    }
+
+    #[test]
+    fn test_parse_derivation_path_max_valid_index() {
+        let result = parse_derivation_path("m/2147483647'/0'/0'/0/0");
+        assert!(result.is_ok());
     }
 }
