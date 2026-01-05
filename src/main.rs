@@ -605,6 +605,11 @@ fn run_generate(
         Vec::new()
     };
 
+    #[cfg(feature = "storage-iceberg")]
+    if iceberg_catalog.is_some() && !cloud_upload {
+        anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
+    }
+
     #[cfg(feature = "storage-cloud")]
     if cloud_upload {
         #[cfg(feature = "storage")]
@@ -776,6 +781,11 @@ fn run_scan(
     } else {
         Vec::new()
     };
+
+    #[cfg(feature = "storage-iceberg")]
+    if iceberg_catalog.is_some() && !cloud_upload {
+        anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
+    }
 
     #[cfg(feature = "storage-cloud")]
     if cloud_upload {
