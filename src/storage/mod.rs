@@ -16,7 +16,9 @@ pub use cloud::{
     UploadProgress, UploadStats,
 };
 #[cfg(feature = "storage-iceberg")]
-pub use iceberg::{FileMetadata, IcebergConfig, IcebergError, RestCatalogClient, SnapshotInfo};
+pub use iceberg::{
+    FileMetadata, IcebergConfig, IcebergError, PartitionValues, RestCatalogClient, SnapshotInfo,
+};
 pub use parquet_backend::ParquetBackend;
 #[cfg(feature = "storage-query")]
 pub use query::{QueryExecutor, QueryResult, Row, Value};

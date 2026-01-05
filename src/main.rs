@@ -527,6 +527,11 @@ fn run_generate(
     iceberg_namespace: String,
     iceberg_table: String,
 ) -> Result<()> {
+    #[cfg(feature = "storage-iceberg")]
+    if iceberg_catalog.is_some() && !cloud_upload {
+        anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
+    }
+
     let source = create_source(source_cmd)?;
     let transform_instances = create_transforms(transforms.clone());
 
@@ -605,15 +610,17 @@ fn run_generate(
         Vec::new()
     };
 
-    #[cfg(feature = "storage-iceberg")]
-    if iceberg_catalog.is_some() && !cloud_upload {
-        anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
-    }
-
     #[cfg(feature = "storage-cloud")]
     if cloud_upload {
         #[cfg(feature = "storage")]
         {
+            #[cfg(feature = "storage-iceberg")]
+            let file_metadata = if iceberg_catalog.is_some() {
+                collect_file_metadata(&written_paths)
+            } else {
+                Vec::new()
+            };
+
             let upload_result = perform_cloud_upload(
                 written_paths.clone(),
                 cloud_endpoint.clone(),
@@ -627,7 +634,7 @@ fn run_generate(
                 if let Some(ref result) = upload_result {
                     perform_iceberg_registration(
                         &result.cloud_paths,
-                        &written_paths,
+                        &file_metadata,
                         result.endpoint.as_deref(),
                         catalog_url,
                         &iceberg_namespace,
@@ -688,6 +695,11 @@ fn run_scan(
     iceberg_namespace: String,
     iceberg_table: String,
 ) -> Result<()> {
+    #[cfg(feature = "storage-iceberg")]
+    if iceberg_catalog.is_some() && !cloud_upload {
+        anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
+    }
+
     let matcher = match vuke::provider::resolve(&targets)? {
         Some(result) => {
             eprintln!(
@@ -782,15 +794,17 @@ fn run_scan(
         Vec::new()
     };
 
-    #[cfg(feature = "storage-iceberg")]
-    if iceberg_catalog.is_some() && !cloud_upload {
-        anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
-    }
-
     #[cfg(feature = "storage-cloud")]
     if cloud_upload {
         #[cfg(feature = "storage")]
         {
+            #[cfg(feature = "storage-iceberg")]
+            let file_metadata = if iceberg_catalog.is_some() {
+                collect_file_metadata(&written_paths)
+            } else {
+                Vec::new()
+            };
+
             let upload_result = perform_cloud_upload(
                 written_paths.clone(),
                 cloud_endpoint.clone(),
@@ -804,7 +818,7 @@ fn run_scan(
                 if let Some(ref result) = upload_result {
                     perform_iceberg_registration(
                         &result.cloud_paths,
-                        &written_paths,
+                        &file_metadata,
                         result.endpoint.as_deref(),
                         catalog_url,
                         &iceberg_namespace,
@@ -1037,9 +1051,62 @@ fn perform_cloud_upload(
 }
 
 #[cfg(feature = "storage-iceberg")]
+struct LocalFileMetadata {
+    file_size: u64,
+    record_count: u64,
+    partition_values: Option<vuke::storage::PartitionValues>,
+}
+
+#[cfg(feature = "storage-iceberg")]
+fn collect_file_metadata(paths: &[PathBuf]) -> Vec<(PathBuf, LocalFileMetadata)> {
+    paths
+        .iter()
+        .filter_map(|path| {
+            let file_size = std::fs::metadata(path).ok()?.len();
+            let record_count = extract_parquet_record_count(path).unwrap_or(0);
+            let partition_values = extract_partition_values(path);
+
+            Some((
+                path.clone(),
+                LocalFileMetadata {
+                    file_size,
+                    record_count,
+                    partition_values,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[cfg(feature = "storage-iceberg")]
+fn extract_partition_values(path: &PathBuf) -> Option<vuke::storage::PartitionValues> {
+    let path_str = path.to_string_lossy();
+
+    let transform = path_str
+        .split('/')
+        .find(|s| s.starts_with("transform="))
+        .and_then(|s| s.strip_prefix("transform="))?
+        .to_string();
+
+    let date_str = path_str
+        .split('/')
+        .find(|s| s.starts_with("date="))
+        .and_then(|s| s.strip_prefix("date="))?;
+
+    let date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
+    let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?;
+    let timestamp_day = (date - epoch).num_days() as i32;
+
+    Some(vuke::storage::PartitionValues {
+        transform,
+        timestamp_day,
+    })
+}
+
+#[cfg(feature = "storage-iceberg")]
 fn perform_iceberg_registration(
     cloud_paths: &[vuke::storage::CloudPath],
-    local_paths: &[PathBuf],
+    file_metadata: &[(PathBuf, LocalFileMetadata)],
     endpoint: Option<&str>,
     catalog_url: &str,
     namespace: &str,
@@ -1061,17 +1128,25 @@ fn perform_iceberg_registration(
 
     let client = RestCatalogClient::new(config, credentials);
 
+    let metadata_map: std::collections::HashMap<_, _> = file_metadata
+        .iter()
+        .map(|(path, meta)| {
+            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            (filename.to_string(), meta)
+        })
+        .collect();
+
     let files: Vec<FileMetadata> = cloud_paths
         .iter()
-        .zip(local_paths.iter())
-        .filter_map(|(cloud_path, local_path)| {
-            let file_size = std::fs::metadata(local_path).ok()?.len();
-            let record_count = extract_parquet_record_count(local_path).unwrap_or(0);
+        .filter_map(|cloud_path| {
+            let filename = cloud_path.key.split('/').last().unwrap_or(&cloud_path.key);
+            let meta = metadata_map.get(filename)?;
 
             Some(FileMetadata {
                 uri: cloud_path.url(endpoint),
-                file_size,
-                record_count,
+                file_size: meta.file_size,
+                record_count: meta.record_count,
+                partition_values: meta.partition_values.clone(),
             })
         })
         .collect();

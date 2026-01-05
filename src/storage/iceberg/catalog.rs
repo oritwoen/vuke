@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use iceberg::spec::{DataContentType, DataFileBuilder, DataFileFormat, Struct};
+use iceberg::spec::{DataContentType, DataFileBuilder, DataFileFormat, Literal, Struct};
 use iceberg::transaction::{ApplyTransactionAction, Transaction};
 use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableCreation, TableIdent};
 use iceberg_catalog_rest::RestCatalogBuilder;
@@ -57,6 +57,14 @@ impl RestCatalogClient {
         let data_files: Vec<_> = files
             .iter()
             .map(|file| {
+                let partition = match &file.partition_values {
+                    Some(pv) => Struct::from_iter([
+                        Some(Literal::string(&pv.transform)),
+                        Some(Literal::int(pv.timestamp_day)),
+                    ]),
+                    None => Struct::empty(),
+                };
+
                 DataFileBuilder::default()
                     .content(DataContentType::Data)
                     .file_path(file.uri.clone())
@@ -64,7 +72,7 @@ impl RestCatalogClient {
                     .file_size_in_bytes(file.file_size)
                     .record_count(file.record_count)
                     .partition_spec_id(partition_spec_id)
-                    .partition(Struct::empty())
+                    .partition(partition)
                     .build()
             })
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -184,6 +192,7 @@ mod tests {
             uri: "s3://bucket/path/file.parquet".to_string(),
             file_size: 1024,
             record_count: 100,
+            partition_values: None,
         };
 
         assert_eq!(meta.uri, "s3://bucket/path/file.parquet");

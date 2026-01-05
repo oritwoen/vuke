@@ -50,6 +50,17 @@ pub struct FileMetadata {
     pub file_size: u64,
     /// Number of records in the file
     pub record_count: u64,
+    /// Partition values extracted from Hive-style path
+    pub partition_values: Option<PartitionValues>,
+}
+
+/// Partition values for Iceberg table (transform and timestamp_day)
+#[derive(Debug, Clone)]
+pub struct PartitionValues {
+    /// Transform name (identity partition)
+    pub transform: String,
+    /// Timestamp day (days since epoch for day partition)
+    pub timestamp_day: i32,
 }
 
 #[cfg(test)]
