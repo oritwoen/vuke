@@ -2,33 +2,35 @@
 //!
 //! Transforms convert input data (numbers, strings) into 32-byte private keys.
 
-mod input;
+mod armory;
+mod bitimage;
 mod direct;
-mod sha256;
 mod double_sha256;
+mod electrum;
+mod input;
+mod lcg;
 mod md5;
 mod milksad;
 mod mt64;
-mod armory;
-mod lcg;
-mod xorshift;
 mod multibit;
-mod electrum;
+mod sha256;
 mod sha256_chain;
+mod xorshift;
 
-pub use input::Input;
+pub use armory::ArmoryTransform;
+pub use bitimage::BitimageTransform;
 pub use direct::DirectTransform;
-pub use sha256::Sha256Transform;
 pub use double_sha256::DoubleSha256Transform;
+pub use electrum::ElectrumTransform;
+pub use input::Input;
+pub use lcg::LcgTransform;
 pub use md5::Md5Transform;
 pub use milksad::MilksadTransform;
 pub use mt64::Mt64Transform;
-pub use armory::ArmoryTransform;
-pub use lcg::LcgTransform;
-pub use xorshift::XorshiftTransform;
 pub use multibit::MultibitTransform;
-pub use electrum::ElectrumTransform;
+pub use sha256::Sha256Transform;
 pub use sha256_chain::Sha256ChainTransform;
+pub use xorshift::XorshiftTransform;
 
 /// 32-byte private key
 pub type Key = [u8; 32];
@@ -73,7 +75,9 @@ pub enum TransformType {
     Mt64,
     Armory,
     Multibit,
-    Electrum { for_change: bool },
+    Electrum {
+        for_change: bool,
+    },
     Lcg {
         variant: Option<crate::lcg::LcgVariant>,
         endian: crate::lcg::LcgEndian,
@@ -84,6 +88,12 @@ pub enum TransformType {
     Sha256Chain {
         variant: Option<crate::sha256_chain::Sha256ChainVariant>,
         chain_depth: u32,
+    },
+    Bitimage {
+        path: String,
+        passphrase: String,
+        passphrase_wordlist: Option<std::path::PathBuf>,
+        derive_count: u32,
     },
 }
 
@@ -121,19 +131,45 @@ impl TransformType {
                 };
                 Box::new(transform)
             }
-            TransformType::Sha256Chain { variant, chain_depth } => {
+            TransformType::Sha256Chain {
+                variant,
+                chain_depth,
+            } => {
                 let transform = match variant {
                     Some(v) => Sha256ChainTransform::with_variant(*v),
                     None => Sha256ChainTransform::new(),
                 };
                 Box::new(transform.with_chain_depth(*chain_depth))
             }
+            TransformType::Bitimage {
+                path,
+                passphrase,
+                passphrase_wordlist,
+                derive_count,
+            } => {
+                let mut transform = BitimageTransform::new()
+                    .with_path(path.clone())
+                    .with_passphrase(passphrase.clone())
+                    .with_derive_count(*derive_count);
+
+                if let Some(wordlist_path) = passphrase_wordlist {
+                    if let Err(e) = transform.with_passphrase_wordlist(wordlist_path.clone()) {
+                        eprintln!(
+                            "Warning: Failed to load passphrase wordlist '{}': {}",
+                            wordlist_path.display(),
+                            e
+                        );
+                    }
+                }
+
+                Box::new(transform)
+            }
         }
     }
 
     pub fn from_str(s: &str) -> Result<Self, String> {
         let s_lower = s.to_lowercase();
-        
+
         match s_lower.as_str() {
             "direct" => Ok(TransformType::Direct),
             "sha256" => Ok(TransformType::Sha256),
@@ -165,8 +201,14 @@ impl TransformType {
                     chain_depth: config.chain_depth,
                 })
             }
+            "bitimage" => Ok(TransformType::Bitimage {
+                path: "m/84'/0'/0'/0/0".to_string(),
+                passphrase: String::new(),
+                passphrase_wordlist: None,
+                derive_count: 1,
+            }),
             _ => Err(format!(
-                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, multibit, electrum[:change], lcg[:variant][:endian], xorshift[:variant], sha256_chain[:variant]",
+                "Unknown transform: {}. Valid: direct, sha256, double_sha256, md5, milksad, mt64, armory, multibit, electrum[:change], lcg[:variant][:endian], xorshift[:variant], sha256_chain[:variant], bitimage",
                 s
             )),
         }

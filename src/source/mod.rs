@@ -2,20 +2,22 @@
 //!
 //! Sources provide input data that gets transformed into private keys.
 
+mod files;
 mod range;
-mod wordlist;
-mod timestamps;
 mod stdin;
+mod timestamps;
+mod wordlist;
 
+pub use files::FilesSource;
 pub use range::RangeSource;
-pub use wordlist::WordlistSource;
-pub use timestamps::TimestampSource;
 pub use stdin::StdinSource;
+pub use timestamps::TimestampSource;
+pub use wordlist::WordlistSource;
 
-use anyhow::Result;
-use crate::transform::Transform;
 use crate::matcher::Matcher;
 use crate::output::Output;
+use crate::transform::Transform;
+use anyhow::Result;
 
 /// Source trait for generating input data
 pub trait Source: Send + Sync {

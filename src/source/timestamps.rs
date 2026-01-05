@@ -48,7 +48,11 @@ impl Source for TimestampSource {
         output: &dyn Output,
     ) -> Result<ProcessStats> {
         let count = self.end - self.start + 1;
-        let total = if self.microseconds { count * 1000 } else { count };
+        let total = if self.microseconds {
+            count * 1000
+        } else {
+            count
+        };
 
         let pb = ProgressBar::new(total);
         pb.set_style(crate::default_progress_style());
@@ -60,28 +64,14 @@ impl Source for TimestampSource {
 
         timestamps.par_iter().for_each(|&ts| {
             // Process base timestamp
-            process_timestamp(
-                ts,
-                transforms,
-                &deriver,
-                matcher,
-                output,
-                &stats,
-                &matches,
-            );
+            process_timestamp(ts, transforms, &deriver, matcher, output, &stats, &matches);
 
             // Process microseconds if enabled
             if self.microseconds {
                 for ms in 0u64..1000 {
                     let ts_ms = ts * 1000 + ms;
                     process_timestamp(
-                        ts_ms,
-                        transforms,
-                        &deriver,
-                        matcher,
-                        output,
-                        &stats,
-                        &matches,
+                        ts_ms, transforms, &deriver, matcher, output, &stats, &matches,
                     );
                 }
                 pb.inc(1001);
@@ -121,7 +111,9 @@ fn process_timestamp(
 
             if let Some(m) = matcher {
                 if let Some(match_info) = m.check(&derived) {
-                    output.hit(source, transform.name(), &derived, &match_info).ok();
+                    output
+                        .hit(source, transform.name(), &derived, &match_info)
+                        .ok();
                     matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             } else {

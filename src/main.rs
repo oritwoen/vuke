@@ -13,7 +13,9 @@ use vuke::derive::KeyDeriver;
 use vuke::matcher::Matcher;
 use vuke::network::parse_network;
 use vuke::output::{ConsoleOutput, Output};
-use vuke::source::{RangeSource, Source, StdinSource, TimestampSource, WordlistSource};
+use vuke::source::{
+    FilesSource, RangeSource, Source, StdinSource, TimestampSource, WordlistSource,
+};
 use vuke::transform::{Transform, TransformType};
 
 fn parse_analyzer_type(s: &str) -> Result<AnalyzerType, String> {
@@ -41,6 +43,27 @@ fn parse_byte_size(s: &str) -> Result<u64, String> {
     } else {
         s.parse::<u64>().map_err(|e| e.to_string())
     }
+}
+
+fn apply_bitimage_config(
+    transforms: Vec<TransformType>,
+    path: &str,
+    passphrase: &str,
+    passphrase_wordlist: Option<PathBuf>,
+    derive_count: u32,
+) -> Vec<TransformType> {
+    transforms
+        .into_iter()
+        .map(|t| match t {
+            TransformType::Bitimage { .. } => TransformType::Bitimage {
+                path: path.to_string(),
+                passphrase: passphrase.to_string(),
+                passphrase_wordlist: passphrase_wordlist.clone(),
+                derive_count,
+            },
+            other => other,
+        })
+        .collect()
 }
 
 /// Compression algorithm for Parquet storage
@@ -147,6 +170,22 @@ enum Command {
         /// Iceberg table name (default: results)
         #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
         iceberg_table: String,
+
+        /// Bitimage: HD derivation path (default: m/84'/0'/0'/0/0)
+        #[arg(long, default_value = "m/84'/0'/0'/0/0")]
+        bitimage_path: String,
+
+        /// Bitimage: BIP39 passphrase
+        #[arg(long, default_value = "")]
+        bitimage_passphrase: String,
+
+        /// Bitimage: passphrase wordlist for brute-force
+        #[arg(long)]
+        bitimage_passphrase_wordlist: Option<PathBuf>,
+
+        /// Bitimage: number of addresses to derive per file (default: 1)
+        #[arg(long, default_value = "1")]
+        bitimage_derive_count: u32,
     },
 
     /// Scan for specific addresses
@@ -221,6 +260,22 @@ enum Command {
         /// Iceberg table name (default: results)
         #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
         iceberg_table: String,
+
+        /// Bitimage: HD derivation path (default: m/84'/0'/0'/0/0)
+        #[arg(long, default_value = "m/84'/0'/0'/0/0")]
+        bitimage_path: String,
+
+        /// Bitimage: BIP39 passphrase
+        #[arg(long, default_value = "")]
+        bitimage_passphrase: String,
+
+        /// Bitimage: passphrase wordlist for brute-force
+        #[arg(long)]
+        bitimage_passphrase_wordlist: Option<PathBuf>,
+
+        /// Bitimage: number of addresses to derive per file (default: 1)
+        #[arg(long, default_value = "1")]
+        bitimage_derive_count: u32,
     },
 
     /// Generate single key from passphrase
@@ -366,6 +421,16 @@ enum SourceCommand {
 
     /// Read from stdin (streaming)
     Stdin,
+
+    /// Files (single file or directory)
+    Files {
+        /// Single file path
+        #[arg(long, conflicts_with = "dir")]
+        file: Option<PathBuf>,
+        /// Directory path (recursive)
+        #[arg(long, conflicts_with = "file")]
+        dir: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -391,8 +456,20 @@ fn main() -> Result<()> {
             iceberg_catalog,
             iceberg_namespace,
             iceberg_table,
+            bitimage_path,
+            bitimage_passphrase,
+            bitimage_passphrase_wordlist,
+            bitimage_derive_count,
         } => {
             let _network = parse_network(&network);
+
+            let transform = apply_bitimage_config(
+                transform,
+                &bitimage_path,
+                &bitimage_passphrase,
+                bitimage_passphrase_wordlist,
+                bitimage_derive_count,
+            );
 
             run_generate(
                 source,
@@ -434,25 +511,39 @@ fn main() -> Result<()> {
             iceberg_catalog,
             iceberg_namespace,
             iceberg_table,
-        } => run_scan(
-            source,
-            transform,
-            targets,
-            output,
-            storage,
-            chunk_records,
-            chunk_bytes,
-            compression,
-            compression_level,
-            cloud_upload,
-            cloud_endpoint,
-            cloud_bucket,
-            cloud_delete_local,
-            cloud_fail_fast,
-            iceberg_catalog,
-            iceberg_namespace,
-            iceberg_table,
-        ),
+            bitimage_path,
+            bitimage_passphrase,
+            bitimage_passphrase_wordlist,
+            bitimage_derive_count,
+        } => {
+            let transform = apply_bitimage_config(
+                transform,
+                &bitimage_path,
+                &bitimage_passphrase,
+                bitimage_passphrase_wordlist,
+                bitimage_derive_count,
+            );
+
+            run_scan(
+                source,
+                transform,
+                targets,
+                output,
+                storage,
+                chunk_records,
+                chunk_bytes,
+                compression,
+                compression_level,
+                cloud_upload,
+                cloud_endpoint,
+                cloud_bucket,
+                cloud_delete_local,
+                cloud_fail_fast,
+                iceberg_catalog,
+                iceberg_namespace,
+                iceberg_table,
+            )
+        }
 
         Command::Single {
             passphrase,
@@ -1264,6 +1355,12 @@ fn create_source(cmd: SourceCommand) -> Result<Box<dyn Source>> {
             microseconds,
         )?)),
         SourceCommand::Stdin => Ok(Box::new(StdinSource::new())),
+        SourceCommand::Files { file, dir } => match (file, dir) {
+            (Some(path), None) => Ok(Box::new(FilesSource::from_file(&path)?)),
+            (None, Some(path)) => Ok(Box::new(FilesSource::from_dir(&path)?)),
+            (None, None) => anyhow::bail!("Either --file or --dir must be specified"),
+            (Some(_), Some(_)) => unreachable!("clap prevents this"),
+        },
     }
 }
 

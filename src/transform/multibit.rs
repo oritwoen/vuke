@@ -1,7 +1,7 @@
 //! MultiBit HD transform - reproduces the seed-as-entropy bug.
 
-use crate::multibit::{MultibitBugDeriver, truncate_mnemonic};
 use super::{Input, Key, Transform};
+use crate::multibit::{truncate_mnemonic, MultibitBugDeriver};
 
 /// Transform that reproduces MultiBit HD Beta 7 seed-as-entropy bug.
 ///
@@ -45,13 +45,12 @@ impl Transform for MultibitTransform {
     fn apply_batch(&self, inputs: &[Input], output: &mut Vec<(String, Key)>) {
         for input in inputs {
             let mnemonic = &input.string_val;
-            
+
             match MultibitBugDeriver::from_mnemonic(mnemonic, &self.passphrase) {
                 Ok(deriver) => {
                     for i in 0..self.derivation_count {
                         if let Ok(key) = deriver.derive_key(i) {
-                            let source = format!("{}[m/0'/0/{}]", 
-                                truncate_mnemonic(mnemonic), i);
+                            let source = format!("{}[m/0'/0/{}]", truncate_mnemonic(mnemonic), i);
                             output.push((source, key));
                         }
                     }
@@ -71,12 +70,12 @@ mod tests {
     fn test_multibit_transform_basic() {
         let transform = MultibitTransform::new().with_derivation_count(1);
         let input = Input::from_string(
-            "skin join dog sponsor camera puppy ritual diagram arrow poverty boy elbow".to_string()
+            "skin join dog sponsor camera puppy ritual diagram arrow poverty boy elbow".to_string(),
         );
-        
+
         let mut output = Vec::new();
         transform.apply_batch(&[input], &mut output);
-        
+
         assert_eq!(output.len(), 1);
         assert!(output[0].0.contains("m/0'/0/0"));
     }
@@ -85,12 +84,12 @@ mod tests {
     fn test_multibit_transform_multiple_keys() {
         let transform = MultibitTransform::new().with_derivation_count(5);
         let input = Input::from_string(
-            "skin join dog sponsor camera puppy ritual diagram arrow poverty boy elbow".to_string()
+            "skin join dog sponsor camera puppy ritual diagram arrow poverty boy elbow".to_string(),
         );
-        
+
         let mut output = Vec::new();
         transform.apply_batch(&[input], &mut output);
-        
+
         assert_eq!(output.len(), 5);
     }
 
@@ -98,10 +97,10 @@ mod tests {
     fn test_multibit_transform_invalid_mnemonic() {
         let transform = MultibitTransform::new();
         let input = Input::from_string("not a valid mnemonic".to_string());
-        
+
         let mut output = Vec::new();
         transform.apply_batch(&[input], &mut output);
-        
+
         assert!(output.is_empty());
     }
 
@@ -109,7 +108,7 @@ mod tests {
     fn test_truncate_mnemonic() {
         let short = "one two three";
         assert_eq!(truncate_mnemonic(short), "one two three");
-        
+
         let long = "one two three four five six seven eight nine ten eleven twelve";
         assert_eq!(truncate_mnemonic(long), "one two...eleven twelve");
     }

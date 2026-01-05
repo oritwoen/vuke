@@ -54,7 +54,8 @@ impl Source for StdinSource {
 
             // Process in batches
             if batch.len() >= 1000 {
-                let (keys, found) = process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer);
+                let (keys, found) =
+                    process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer);
                 keys_generated += keys;
                 matches_found += found;
                 batch.clear();
@@ -63,7 +64,8 @@ impl Source for StdinSource {
 
         // Process remaining
         if !batch.is_empty() {
-            let (keys, found) = process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer);
+            let (keys, found) =
+                process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer);
             keys_generated += keys;
             matches_found += found;
         }
@@ -96,7 +98,9 @@ fn process_batch(
 
             if let Some(m) = matcher {
                 if let Some(match_info) = m.check(&derived) {
-                    output.hit(source, transform.name(), &derived, &match_info).ok();
+                    output
+                        .hit(source, transform.name(), &derived, &match_info)
+                        .ok();
                     matches_found += 1;
                 }
             } else {

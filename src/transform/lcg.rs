@@ -1,7 +1,7 @@
 //! LCG transform - generates keys using Linear Congruential Generator.
 
-use crate::lcg::{generate_key, LcgEndian, LcgVariant, ALL_VARIANTS};
 use super::{Input, Key, Transform};
+use crate::lcg::{generate_key, LcgEndian, LcgVariant, ALL_VARIANTS};
 
 pub struct LcgTransform {
     variant: Option<LcgVariant>,
@@ -54,7 +54,12 @@ impl Transform for LcgTransform {
                         let source = if variants.len() > 1 {
                             match self.endian {
                                 LcgEndian::Big => format!("{}:{}", input.string_val, variant.name),
-                                LcgEndian::Little => format!("{}:{}:{}", input.string_val, variant.name, self.endian.as_str()),
+                                LcgEndian::Little => format!(
+                                    "{}:{}:{}",
+                                    input.string_val,
+                                    variant.name,
+                                    self.endian.as_str()
+                                ),
                             }
                         } else {
                             input.string_val.clone()

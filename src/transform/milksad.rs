@@ -4,8 +4,8 @@
 //! This reproduces the vulnerability found in Libbitcoin Explorer (bx) where
 //! keys were generated using MT19937 with weak 32-bit seeds.
 
-use rand_mt::Mt;
 use super::{Input, Key, Transform};
+use rand_mt::Mt;
 
 pub struct MilksadTransform;
 
