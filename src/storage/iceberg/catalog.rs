@@ -62,7 +62,7 @@ impl RestCatalogClient {
                         Some(Literal::string(&pv.transform)),
                         Some(Literal::int(pv.timestamp_day)),
                     ]),
-                    None => Struct::empty(),
+                    None => Struct::from_iter([None, None]),
                 };
 
                 DataFileBuilder::default()

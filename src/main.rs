@@ -1080,16 +1080,16 @@ fn collect_file_metadata(paths: &[PathBuf]) -> Vec<(PathBuf, LocalFileMetadata)>
 
 #[cfg(feature = "storage-iceberg")]
 fn extract_partition_values(path: &PathBuf) -> Option<vuke::storage::PartitionValues> {
-    let path_str = path.to_string_lossy();
-
-    let transform = path_str
-        .split('/')
+    let transform = path
+        .iter()
+        .filter_map(|c| c.to_str())
         .find(|s| s.starts_with("transform="))
         .and_then(|s| s.strip_prefix("transform="))?
         .to_string();
 
-    let date_str = path_str
-        .split('/')
+    let date_str = path
+        .iter()
+        .filter_map(|c| c.to_str())
         .find(|s| s.starts_with("date="))
         .and_then(|s| s.strip_prefix("date="))?;
 
