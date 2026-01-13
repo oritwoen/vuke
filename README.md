@@ -1,15 +1,15 @@
 # vuke
 
-[![Crates.io](https://img.shields.io/crates/v/vuke)](https://crates.io/crates/vuke)
-[![License](https://img.shields.io/crates/l/vuke)](LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/vuke?style=flat&colorA=130f40&colorB=474787)](https://crates.io/crates/vuke)
+[![Downloads](https://img.shields.io/crates/d/vuke?style=flat&colorA=130f40&colorB=474787)](https://crates.io/crates/vuke)
+[![License](https://img.shields.io/crates/l/vuke?style=flat&colorA=130f40&colorB=474787)](LICENSE)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oritwoen/vuke)
-[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/gh/oritwoen/vuke)
 
 Research tool for analyzing and reproducing vulnerable Bitcoin key generation.
 
 ## Community
 
-- [Bitcointalk](https://bitcointalk.org/index.php?topic=5570717.0) - Discussion thread
+- [Bitcointalk](https://bitcointalk.org/index.php?topic=5570717) - Discussion thread
 
 ## Features
 
