@@ -98,7 +98,7 @@ struct StorageArgs {
     #[arg(long, value_enum, default_value = "zstd")]
     compression: CompressionAlgorithm,
 
-    /// Zstd compression level (1-22, higher = slower but smaller)
+    /// Compression level (Zstd: 1-22, Gzip: 1-9; invalid levels use algorithm default)
     #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
     compression_level: i32,
 
