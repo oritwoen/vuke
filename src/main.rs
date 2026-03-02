@@ -3,7 +3,7 @@
 //! Combines multiple key derivation methods to analyze weak key generation patterns.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 use vuke::analyze::{
@@ -47,19 +47,16 @@ fn parse_byte_size(s: &str) -> Result<u64, String> {
 
 fn apply_bitimage_config(
     transforms: Vec<TransformType>,
-    path: &str,
-    passphrase: &str,
-    passphrase_wordlist: Option<PathBuf>,
-    derive_count: u32,
+    args: &BitimageArgs,
 ) -> Vec<TransformType> {
     transforms
         .into_iter()
         .map(|t| match t {
             TransformType::Bitimage { .. } => TransformType::Bitimage {
-                path: path.to_string(),
-                passphrase: passphrase.to_string(),
-                passphrase_wordlist: passphrase_wordlist.clone(),
-                derive_count,
+                path: args.bitimage_path.clone(),
+                passphrase: args.bitimage_passphrase.clone(),
+                passphrase_wordlist: args.bitimage_passphrase_wordlist.clone(),
+                derive_count: args.bitimage_derive_count,
             },
             other => other,
         })
@@ -80,6 +77,82 @@ pub enum CompressionAlgorithm {
     /// Zstd compression (configurable speed/ratio tradeoff)
     #[default]
     Zstd,
+}
+
+/// Shared storage, cloud upload, and Iceberg args for Generate and Scan commands.
+#[derive(Args, Clone)]
+struct StorageArgs {
+    /// Storage directory for Parquet output (requires 'storage' feature)
+    #[arg(long)]
+    storage: Option<PathBuf>,
+
+    /// Rotate storage chunk after N records (default: 1000000)
+    #[arg(long, default_value = "1000000")]
+    chunk_records: u64,
+
+    /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
+    #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
+    chunk_bytes: u64,
+
+    /// Compression algorithm for Parquet storage
+    #[arg(long, value_enum, default_value = "zstd")]
+    compression: CompressionAlgorithm,
+
+    /// Zstd compression level (1-22, higher = slower but smaller)
+    #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
+    compression_level: i32,
+
+    /// Enable cloud upload (requires 'storage-cloud' feature)
+    #[arg(long)]
+    cloud_upload: bool,
+
+    /// S3-compatible endpoint URL (e.g., https://xxx.r2.cloudflarestorage.com)
+    #[arg(long, env = "CLOUD_ENDPOINT")]
+    cloud_endpoint: Option<String>,
+
+    /// Cloud bucket name
+    #[arg(long, env = "CLOUD_BUCKET")]
+    cloud_bucket: Option<String>,
+
+    /// Delete local files after successful cloud upload
+    #[arg(long)]
+    cloud_delete_local: bool,
+
+    /// Stop on first cloud upload failure (default: continue and report)
+    #[arg(long)]
+    cloud_fail_fast: bool,
+
+    /// Iceberg REST catalog URL (requires 'storage-iceberg' feature)
+    #[arg(long, env = "ICEBERG_CATALOG")]
+    iceberg_catalog: Option<String>,
+
+    /// Iceberg namespace (default: vuke)
+    #[arg(long, env = "ICEBERG_NAMESPACE", default_value = "vuke")]
+    iceberg_namespace: String,
+
+    /// Iceberg table name (default: results)
+    #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
+    iceberg_table: String,
+}
+
+/// Shared Bitimage derivation args for Generate and Scan commands.
+#[derive(Args, Clone)]
+struct BitimageArgs {
+    /// Bitimage: HD derivation path (default: m/84'/0'/0'/0/0)
+    #[arg(long, default_value = "m/84'/0'/0'/0/0")]
+    bitimage_path: String,
+
+    /// Bitimage: BIP39 passphrase
+    #[arg(long, default_value = "")]
+    bitimage_passphrase: String,
+
+    /// Bitimage: passphrase wordlist for brute-force
+    #[arg(long)]
+    bitimage_passphrase_wordlist: Option<PathBuf>,
+
+    /// Bitimage: number of addresses to derive per file (default: 1)
+    #[arg(long, default_value = "1")]
+    bitimage_derive_count: u32,
 }
 
 #[derive(Parser)]
@@ -119,73 +192,11 @@ enum Command {
         #[arg(short, long)]
         output: Option<PathBuf>,
 
-        /// Storage directory for Parquet output (requires 'storage' feature)
-        #[arg(long)]
-        storage: Option<PathBuf>,
+        #[command(flatten)]
+        storage_args: StorageArgs,
 
-        /// Rotate storage chunk after N records (default: 1000000)
-        #[arg(long, default_value = "1000000")]
-        chunk_records: u64,
-
-        /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
-        #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
-        chunk_bytes: u64,
-
-        /// Compression algorithm for Parquet storage
-        #[arg(long, value_enum, default_value = "zstd")]
-        compression: CompressionAlgorithm,
-
-        /// Zstd compression level (1-22, higher = slower but smaller)
-        #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
-        compression_level: i32,
-
-        /// Enable cloud upload (requires 'storage-cloud' feature)
-        #[arg(long)]
-        cloud_upload: bool,
-
-        /// S3-compatible endpoint URL (e.g., https://xxx.r2.cloudflarestorage.com)
-        #[arg(long, env = "CLOUD_ENDPOINT")]
-        cloud_endpoint: Option<String>,
-
-        /// Cloud bucket name
-        #[arg(long, env = "CLOUD_BUCKET")]
-        cloud_bucket: Option<String>,
-
-        /// Delete local files after successful cloud upload
-        #[arg(long)]
-        cloud_delete_local: bool,
-
-        /// Stop on first cloud upload failure (default: continue and report)
-        #[arg(long)]
-        cloud_fail_fast: bool,
-
-        /// Iceberg REST catalog URL (requires 'storage-iceberg' feature)
-        #[arg(long, env = "ICEBERG_CATALOG")]
-        iceberg_catalog: Option<String>,
-
-        /// Iceberg namespace (default: vuke)
-        #[arg(long, env = "ICEBERG_NAMESPACE", default_value = "vuke")]
-        iceberg_namespace: String,
-
-        /// Iceberg table name (default: results)
-        #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
-        iceberg_table: String,
-
-        /// Bitimage: HD derivation path (default: m/84'/0'/0'/0/0)
-        #[arg(long, default_value = "m/84'/0'/0'/0/0")]
-        bitimage_path: String,
-
-        /// Bitimage: BIP39 passphrase
-        #[arg(long, default_value = "")]
-        bitimage_passphrase: String,
-
-        /// Bitimage: passphrase wordlist for brute-force
-        #[arg(long)]
-        bitimage_passphrase_wordlist: Option<PathBuf>,
-
-        /// Bitimage: number of addresses to derive per file (default: 1)
-        #[arg(long, default_value = "1")]
-        bitimage_derive_count: u32,
+        #[command(flatten)]
+        bitimage_args: BitimageArgs,
     },
 
     /// Scan for specific addresses
@@ -209,73 +220,11 @@ enum Command {
         #[arg(short, long)]
         output: Option<PathBuf>,
 
-        /// Storage directory for Parquet output (requires 'storage' feature)
-        #[arg(long)]
-        storage: Option<PathBuf>,
+        #[command(flatten)]
+        storage_args: StorageArgs,
 
-        /// Rotate storage chunk after N records (default: 1000000)
-        #[arg(long, default_value = "1000000")]
-        chunk_records: u64,
-
-        /// Rotate storage chunk after N bytes (default: 100MB, accepts: 100M, 1G)
-        #[arg(long, value_parser = parse_byte_size, default_value = "100M")]
-        chunk_bytes: u64,
-
-        /// Compression algorithm for Parquet storage
-        #[arg(long, value_enum, default_value = "zstd")]
-        compression: CompressionAlgorithm,
-
-        /// Zstd compression level (1-22, higher = slower but smaller)
-        #[arg(long, default_value = "3", value_parser = clap::value_parser!(i32).range(1..=22))]
-        compression_level: i32,
-
-        /// Enable cloud upload (requires 'storage-cloud' feature)
-        #[arg(long)]
-        cloud_upload: bool,
-
-        /// S3-compatible endpoint URL (e.g., https://xxx.r2.cloudflarestorage.com)
-        #[arg(long, env = "CLOUD_ENDPOINT")]
-        cloud_endpoint: Option<String>,
-
-        /// Cloud bucket name
-        #[arg(long, env = "CLOUD_BUCKET")]
-        cloud_bucket: Option<String>,
-
-        /// Delete local files after successful cloud upload
-        #[arg(long)]
-        cloud_delete_local: bool,
-
-        /// Stop on first cloud upload failure (default: continue and report)
-        #[arg(long)]
-        cloud_fail_fast: bool,
-
-        /// Iceberg REST catalog URL (requires 'storage-iceberg' feature)
-        #[arg(long, env = "ICEBERG_CATALOG")]
-        iceberg_catalog: Option<String>,
-
-        /// Iceberg namespace (default: vuke)
-        #[arg(long, env = "ICEBERG_NAMESPACE", default_value = "vuke")]
-        iceberg_namespace: String,
-
-        /// Iceberg table name (default: results)
-        #[arg(long, env = "ICEBERG_TABLE", default_value = "results")]
-        iceberg_table: String,
-
-        /// Bitimage: HD derivation path (default: m/84'/0'/0'/0/0)
-        #[arg(long, default_value = "m/84'/0'/0'/0/0")]
-        bitimage_path: String,
-
-        /// Bitimage: BIP39 passphrase
-        #[arg(long, default_value = "")]
-        bitimage_passphrase: String,
-
-        /// Bitimage: passphrase wordlist for brute-force
-        #[arg(long)]
-        bitimage_passphrase_wordlist: Option<PathBuf>,
-
-        /// Bitimage: number of addresses to derive per file (default: 1)
-        #[arg(long, default_value = "1")]
-        bitimage_derive_count: u32,
+        #[command(flatten)]
+        bitimage_args: BitimageArgs,
     },
 
     /// Generate single key from passphrase
@@ -443,53 +392,12 @@ fn main() -> Result<()> {
             network,
             verbose,
             output,
-            storage,
-            chunk_records,
-            chunk_bytes,
-            compression,
-            compression_level,
-            cloud_upload,
-            cloud_endpoint,
-            cloud_bucket,
-            cloud_delete_local,
-            cloud_fail_fast,
-            iceberg_catalog,
-            iceberg_namespace,
-            iceberg_table,
-            bitimage_path,
-            bitimage_passphrase,
-            bitimage_passphrase_wordlist,
-            bitimage_derive_count,
+            storage_args,
+            bitimage_args,
         } => {
             let _network = parse_network(&network);
-
-            let transform = apply_bitimage_config(
-                transform,
-                &bitimage_path,
-                &bitimage_passphrase,
-                bitimage_passphrase_wordlist,
-                bitimage_derive_count,
-            );
-
-            run_generate(
-                source,
-                transform,
-                output,
-                verbose,
-                storage,
-                chunk_records,
-                chunk_bytes,
-                compression,
-                compression_level,
-                cloud_upload,
-                cloud_endpoint,
-                cloud_bucket,
-                cloud_delete_local,
-                cloud_fail_fast,
-                iceberg_catalog,
-                iceberg_namespace,
-                iceberg_table,
-            )
+            let transform = apply_bitimage_config(transform, &bitimage_args);
+            run_generate(source, transform, output, verbose, &storage_args)
         }
 
         Command::Scan {
@@ -498,51 +406,11 @@ fn main() -> Result<()> {
             targets,
             network: _,
             output,
-            storage,
-            chunk_records,
-            chunk_bytes,
-            compression,
-            compression_level,
-            cloud_upload,
-            cloud_endpoint,
-            cloud_bucket,
-            cloud_delete_local,
-            cloud_fail_fast,
-            iceberg_catalog,
-            iceberg_namespace,
-            iceberg_table,
-            bitimage_path,
-            bitimage_passphrase,
-            bitimage_passphrase_wordlist,
-            bitimage_derive_count,
+            storage_args,
+            bitimage_args,
         } => {
-            let transform = apply_bitimage_config(
-                transform,
-                &bitimage_path,
-                &bitimage_passphrase,
-                bitimage_passphrase_wordlist,
-                bitimage_derive_count,
-            );
-
-            run_scan(
-                source,
-                transform,
-                targets,
-                output,
-                storage,
-                chunk_records,
-                chunk_bytes,
-                compression,
-                compression_level,
-                cloud_upload,
-                cloud_endpoint,
-                cloud_bucket,
-                cloud_delete_local,
-                cloud_fail_fast,
-                iceberg_catalog,
-                iceberg_namespace,
-                iceberg_table,
-            )
+            let transform = apply_bitimage_config(transform, &bitimage_args);
+            run_scan(source, transform, targets, output, &storage_args)
         }
 
         Command::Single {
@@ -599,27 +467,145 @@ fn main() -> Result<()> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Shared storage helpers
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "storage")]
+fn create_storage_output(
+    sa: &StorageArgs,
+    transforms: &[TransformType],
+) -> Result<Option<vuke::output::StorageOutput>> {
+    let path = match sa.storage {
+        Some(ref p) => p,
+        None => return Ok(None),
+    };
+
+    use parquet::basic::{Compression, GzipLevel, ZstdLevel};
+
+    let parquet_compression = match sa.compression {
+        CompressionAlgorithm::None => Compression::UNCOMPRESSED,
+        CompressionAlgorithm::Snappy => Compression::SNAPPY,
+        CompressionAlgorithm::Gzip => {
+            Compression::GZIP(GzipLevel::try_new(sa.compression_level as u32).unwrap_or_default())
+        }
+        CompressionAlgorithm::Lz4 => Compression::LZ4,
+        CompressionAlgorithm::Zstd => {
+            Compression::ZSTD(ZstdLevel::try_new(sa.compression_level).unwrap_or_default())
+        }
+    };
+
+    let transform_name = transforms
+        .first()
+        .map(|t| t.create().name().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Ok(Some(
+        vuke::output::StorageOutput::new(path, &transform_name)?
+            .with_compression(parquet_compression)
+            .with_chunk_records(sa.chunk_records)
+            .with_chunk_bytes(sa.chunk_bytes),
+    ))
+}
+
+#[cfg(feature = "storage")]
+fn build_output(
+    console_out: Box<dyn Output>,
+    storage_output: &Option<vuke::output::StorageOutput>,
+) -> Box<dyn Output> {
+    match storage_output {
+        Some(storage) => Box::new(vuke::output::MultiOutput::new(vec![
+            console_out,
+            Box::new(storage.clone()),
+        ])),
+        None => console_out,
+    }
+}
+
+#[cfg(feature = "storage")]
+fn finalize_storage(
+    storage_output: Option<vuke::output::StorageOutput>,
+    sa: &StorageArgs,
+) -> Result<()> {
+    let written_paths = if let Some(storage) = storage_output {
+        let summary = storage.finish()?;
+        print_storage_summary_inline(&summary);
+        summary.paths
+    } else {
+        Vec::new()
+    };
+
+    #[cfg(feature = "storage-cloud")]
+    if sa.cloud_upload {
+        #[cfg(feature = "storage-iceberg")]
+        let file_metadata = if sa.iceberg_catalog.is_some() {
+            collect_file_metadata(&written_paths)
+        } else {
+            Vec::new()
+        };
+
+        let upload_result = perform_cloud_upload(
+            written_paths.clone(),
+            sa.cloud_endpoint.clone(),
+            sa.cloud_bucket.clone(),
+            sa.cloud_delete_local,
+            sa.cloud_fail_fast,
+        )?;
+
+        #[cfg(feature = "storage-iceberg")]
+        if let Some(ref catalog_url) = sa.iceberg_catalog {
+            if let Some(ref result) = upload_result {
+                perform_iceberg_registration(
+                    &result.cloud_paths,
+                    &file_metadata,
+                    result.endpoint.as_deref(),
+                    catalog_url,
+                    &sa.iceberg_namespace,
+                    &sa.iceberg_table,
+                )?;
+            }
+        }
+    }
+
+    #[cfg(not(feature = "storage-cloud"))]
+    let _ = (written_paths, sa);
+
+    Ok(())
+}
+
+/// Suppress unused-variable warnings when storage features are disabled.
+#[cfg(not(feature = "storage"))]
+fn suppress_unused_storage(sa: &StorageArgs) {
+    let _ = (
+        &sa.storage,
+        sa.chunk_records,
+        sa.chunk_bytes,
+        sa.compression,
+        sa.compression_level,
+        sa.cloud_upload,
+        &sa.cloud_endpoint,
+        &sa.cloud_bucket,
+        sa.cloud_delete_local,
+        sa.cloud_fail_fast,
+        &sa.iceberg_catalog,
+        &sa.iceberg_namespace,
+        &sa.iceberg_table,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Generate
+// ---------------------------------------------------------------------------
+
 fn run_generate(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
     output_file: Option<PathBuf>,
     verbose: bool,
-    storage_path: Option<PathBuf>,
-    chunk_records: u64,
-    chunk_bytes: u64,
-    compression: CompressionAlgorithm,
-    compression_level: i32,
-    cloud_upload: bool,
-    cloud_endpoint: Option<String>,
-    cloud_bucket: Option<String>,
-    cloud_delete_local: bool,
-    cloud_fail_fast: bool,
-    iceberg_catalog: Option<String>,
-    iceberg_namespace: String,
-    iceberg_table: String,
+    sa: &StorageArgs,
 ) -> Result<()> {
     #[cfg(feature = "storage-iceberg")]
-    if iceberg_catalog.is_some() && !cloud_upload {
+    if sa.iceberg_catalog.is_some() && !sa.cloud_upload {
         anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
     }
 
@@ -634,52 +620,18 @@ fn run_generate(
     };
 
     #[cfg(feature = "storage")]
-    let storage_output: Option<vuke::output::StorageOutput> = if let Some(ref path) = storage_path {
-        use parquet::basic::{Compression, GzipLevel, ZstdLevel};
-
-        let parquet_compression = match compression {
-            CompressionAlgorithm::None => Compression::UNCOMPRESSED,
-            CompressionAlgorithm::Snappy => Compression::SNAPPY,
-            CompressionAlgorithm::Gzip => {
-                Compression::GZIP(GzipLevel::try_new(compression_level as u32).unwrap_or_default())
-            }
-            CompressionAlgorithm::Lz4 => Compression::LZ4,
-            CompressionAlgorithm::Zstd => {
-                Compression::ZSTD(ZstdLevel::try_new(compression_level).unwrap_or_default())
-            }
-        };
-
-        let transform_name = transforms
-            .first()
-            .map(|t| t.create().name().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        Some(
-            vuke::output::StorageOutput::new(path, &transform_name)?
-                .with_compression(parquet_compression)
-                .with_chunk_records(chunk_records)
-                .with_chunk_bytes(chunk_bytes),
-        )
-    } else {
-        None
-    };
-
+    let storage_output = create_storage_output(sa, &transforms)?;
     #[cfg(feature = "storage")]
-    let output: Box<dyn Output> = match &storage_output {
-        Some(storage) => Box::new(vuke::output::MultiOutput::new(vec![
-            console_out,
-            Box::new(storage.clone()),
-        ])),
-        None => console_out,
-    };
+    let output = build_output(console_out, &storage_output);
 
     #[cfg(not(feature = "storage"))]
     let output: Box<dyn Output> = {
-        if storage_path.is_some() {
+        if sa.storage.is_some() {
             anyhow::bail!(
                 "--storage requires the 'storage' feature. Rebuild with: cargo build --features storage"
             );
         }
-        let _ = (chunk_records, chunk_bytes, compression, compression_level);
+        suppress_unused_storage(sa);
         console_out
     };
 
@@ -693,101 +645,24 @@ fn run_generate(
     );
 
     #[cfg(feature = "storage")]
-    let written_paths = if let Some(storage) = storage_output {
-        let summary = storage.finish()?;
-        print_storage_summary_inline(&summary);
-        summary.paths
-    } else {
-        Vec::new()
-    };
-
-    #[cfg(feature = "storage-cloud")]
-    if cloud_upload {
-        #[cfg(feature = "storage")]
-        {
-            #[cfg(feature = "storage-iceberg")]
-            let file_metadata = if iceberg_catalog.is_some() {
-                collect_file_metadata(&written_paths)
-            } else {
-                Vec::new()
-            };
-
-            let upload_result = perform_cloud_upload(
-                written_paths.clone(),
-                cloud_endpoint.clone(),
-                cloud_bucket,
-                cloud_delete_local,
-                cloud_fail_fast,
-            )?;
-
-            #[cfg(feature = "storage-iceberg")]
-            if let Some(ref catalog_url) = iceberg_catalog {
-                if let Some(ref result) = upload_result {
-                    perform_iceberg_registration(
-                        &result.cloud_paths,
-                        &file_metadata,
-                        result.endpoint.as_deref(),
-                        catalog_url,
-                        &iceberg_namespace,
-                        &iceberg_table,
-                    )?;
-                }
-            }
-        }
-
-        #[cfg(not(feature = "storage"))]
-        anyhow::bail!("--cloud-upload requires --storage to be specified");
-    }
-
-    #[cfg(all(feature = "storage", not(feature = "storage-cloud")))]
-    let _ = (
-        written_paths,
-        cloud_upload,
-        cloud_endpoint,
-        cloud_bucket,
-        cloud_delete_local,
-        cloud_fail_fast,
-        iceberg_catalog,
-        iceberg_namespace,
-        iceberg_table,
-    );
-
-    #[cfg(not(feature = "storage"))]
-    let _ = (
-        cloud_upload,
-        cloud_endpoint,
-        cloud_bucket,
-        cloud_delete_local,
-        cloud_fail_fast,
-        iceberg_catalog,
-        iceberg_namespace,
-        iceberg_table,
-    );
+    finalize_storage(storage_output, sa)?;
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Scan
+// ---------------------------------------------------------------------------
 
 fn run_scan(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
     targets: String,
     output_file: Option<PathBuf>,
-    storage_path: Option<PathBuf>,
-    chunk_records: u64,
-    chunk_bytes: u64,
-    compression: CompressionAlgorithm,
-    compression_level: i32,
-    cloud_upload: bool,
-    cloud_endpoint: Option<String>,
-    cloud_bucket: Option<String>,
-    cloud_delete_local: bool,
-    cloud_fail_fast: bool,
-    iceberg_catalog: Option<String>,
-    iceberg_namespace: String,
-    iceberg_table: String,
+    sa: &StorageArgs,
 ) -> Result<()> {
     #[cfg(feature = "storage-iceberg")]
-    if iceberg_catalog.is_some() && !cloud_upload {
+    if sa.iceberg_catalog.is_some() && !sa.cloud_upload {
         anyhow::bail!("--iceberg-catalog requires --cloud-upload to be enabled");
     }
 
@@ -818,52 +693,18 @@ fn run_scan(
     };
 
     #[cfg(feature = "storage")]
-    let storage_output: Option<vuke::output::StorageOutput> = if let Some(ref path) = storage_path {
-        use parquet::basic::{Compression, GzipLevel, ZstdLevel};
-
-        let parquet_compression = match compression {
-            CompressionAlgorithm::None => Compression::UNCOMPRESSED,
-            CompressionAlgorithm::Snappy => Compression::SNAPPY,
-            CompressionAlgorithm::Gzip => {
-                Compression::GZIP(GzipLevel::try_new(compression_level as u32).unwrap_or_default())
-            }
-            CompressionAlgorithm::Lz4 => Compression::LZ4,
-            CompressionAlgorithm::Zstd => {
-                Compression::ZSTD(ZstdLevel::try_new(compression_level).unwrap_or_default())
-            }
-        };
-
-        let transform_name = transforms
-            .first()
-            .map(|t| t.create().name().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        Some(
-            vuke::output::StorageOutput::new(path, &transform_name)?
-                .with_compression(parquet_compression)
-                .with_chunk_records(chunk_records)
-                .with_chunk_bytes(chunk_bytes),
-        )
-    } else {
-        None
-    };
-
+    let storage_output = create_storage_output(sa, &transforms)?;
     #[cfg(feature = "storage")]
-    let output: Box<dyn Output> = match &storage_output {
-        Some(storage) => Box::new(vuke::output::MultiOutput::new(vec![
-            console_out,
-            Box::new(storage.clone()),
-        ])),
-        None => console_out,
-    };
+    let output = build_output(console_out, &storage_output);
 
     #[cfg(not(feature = "storage"))]
     let output: Box<dyn Output> = {
-        if storage_path.is_some() {
+        if sa.storage.is_some() {
             anyhow::bail!(
                 "--storage requires the 'storage' feature. Rebuild with: cargo build --features storage"
             );
         }
-        let _ = (chunk_records, chunk_bytes, compression, compression_level);
+        suppress_unused_storage(sa);
         console_out
     };
 
@@ -877,79 +718,14 @@ fn run_scan(
     );
 
     #[cfg(feature = "storage")]
-    let written_paths = if let Some(storage) = storage_output {
-        let summary = storage.finish()?;
-        print_storage_summary_inline(&summary);
-        summary.paths
-    } else {
-        Vec::new()
-    };
-
-    #[cfg(feature = "storage-cloud")]
-    if cloud_upload {
-        #[cfg(feature = "storage")]
-        {
-            #[cfg(feature = "storage-iceberg")]
-            let file_metadata = if iceberg_catalog.is_some() {
-                collect_file_metadata(&written_paths)
-            } else {
-                Vec::new()
-            };
-
-            let upload_result = perform_cloud_upload(
-                written_paths.clone(),
-                cloud_endpoint.clone(),
-                cloud_bucket,
-                cloud_delete_local,
-                cloud_fail_fast,
-            )?;
-
-            #[cfg(feature = "storage-iceberg")]
-            if let Some(ref catalog_url) = iceberg_catalog {
-                if let Some(ref result) = upload_result {
-                    perform_iceberg_registration(
-                        &result.cloud_paths,
-                        &file_metadata,
-                        result.endpoint.as_deref(),
-                        catalog_url,
-                        &iceberg_namespace,
-                        &iceberg_table,
-                    )?;
-                }
-            }
-        }
-
-        #[cfg(not(feature = "storage"))]
-        anyhow::bail!("--cloud-upload requires --storage to be specified");
-    }
-
-    #[cfg(all(feature = "storage", not(feature = "storage-cloud")))]
-    let _ = (
-        written_paths,
-        cloud_upload,
-        cloud_endpoint,
-        cloud_bucket,
-        cloud_delete_local,
-        cloud_fail_fast,
-        iceberg_catalog,
-        iceberg_namespace,
-        iceberg_table,
-    );
-
-    #[cfg(not(feature = "storage"))]
-    let _ = (
-        cloud_upload,
-        cloud_endpoint,
-        cloud_bucket,
-        cloud_delete_local,
-        cloud_fail_fast,
-        iceberg_catalog,
-        iceberg_namespace,
-        iceberg_table,
-    );
+    finalize_storage(storage_output, sa)?;
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Single
+// ---------------------------------------------------------------------------
 
 fn run_single(passphrase: &str, transform_type: TransformType, network: &str) -> Result<()> {
     use vuke::transform::Input;
@@ -990,6 +766,10 @@ fn run_single(passphrase: &str, transform_type: TransformType, network: &str) ->
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Storage summary helpers
+// ---------------------------------------------------------------------------
 
 #[cfg(feature = "storage")]
 fn print_storage_summary_inline(summary: &vuke::output::StorageSummary) {
@@ -1033,6 +813,10 @@ fn format_bytes(bytes: u64) -> String {
         format!("{} B", bytes)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Cloud upload
+// ---------------------------------------------------------------------------
 
 #[cfg(feature = "storage-cloud")]
 struct CloudUploadResult {
@@ -1140,6 +924,10 @@ fn perform_cloud_upload(
         }))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Iceberg catalog
+// ---------------------------------------------------------------------------
 
 #[cfg(feature = "storage-iceberg")]
 struct LocalFileMetadata {
@@ -1277,6 +1065,10 @@ fn extract_parquet_record_count(path: &PathBuf) -> Option<u64> {
     Some(metadata.file_metadata().num_rows() as u64)
 }
 
+// ---------------------------------------------------------------------------
+// Query
+// ---------------------------------------------------------------------------
+
 #[cfg(feature = "storage-query")]
 fn run_query(
     path: PathBuf,
@@ -1341,6 +1133,10 @@ fn run_query(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Source / transform helpers
+// ---------------------------------------------------------------------------
+
 fn create_source(cmd: SourceCommand) -> Result<Box<dyn Source>> {
     match cmd {
         SourceCommand::Range { start, end } => Ok(Box::new(RangeSource::new(start, end))),
@@ -1377,6 +1173,10 @@ fn resolve_cascade(input: &str) -> Result<Option<Vec<(u8, u64)>>> {
         Ok(Some(parse_cascade(input)?))
     }
 }
+
+// ---------------------------------------------------------------------------
+// Analyze
+// ---------------------------------------------------------------------------
 
 fn run_analyze(
     key_input: &str,
