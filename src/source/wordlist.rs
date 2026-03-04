@@ -22,9 +22,10 @@ impl WordlistSource {
     pub fn from_file(path: &Path) -> Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
+        #[allow(clippy::lines_filter_map_ok)] // skip malformed lines, don't truncate wordlist
         let lines: Vec<String> = reader
             .lines()
-            .map_while(Result::ok)
+            .filter_map(Result::ok)
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();

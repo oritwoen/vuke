@@ -101,7 +101,8 @@ impl MultibitAnalyzer {
         };
 
         let reader = BufReader::new(file);
-        let lines: Vec<String> = reader.lines().map_while(Result::ok).collect();
+        #[allow(clippy::lines_filter_map_ok)] // skip malformed lines, don't truncate dictionary
+        let lines: Vec<String> = reader.lines().filter_map(Result::ok).collect();
         
         if let Some(pb) = progress {
             pb.set_length(lines.len() as u64);
