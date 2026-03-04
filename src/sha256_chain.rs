@@ -18,20 +18,23 @@ pub enum Sha256ChainEndian {
 }
 
 impl Sha256ChainEndian {
-    /// Parse endianness from string ("be" or "le").
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "be" | "big" => Some(Sha256ChainEndian::Big),
-            "le" | "little" => Some(Sha256ChainEndian::Little),
-            _ => None,
-        }
-    }
-
     /// Short name for display.
     pub fn as_str(&self) -> &'static str {
         match self {
             Sha256ChainEndian::Big => "be",
             Sha256ChainEndian::Little => "le",
+        }
+    }
+}
+
+impl std::str::FromStr for Sha256ChainEndian {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "be" | "big" => Ok(Sha256ChainEndian::Big),
+            "le" | "little" => Ok(Sha256ChainEndian::Little),
+            _ => Err(format!("Invalid endian: '{}'. Valid: be, le", s)),
         }
     }
 }
@@ -57,15 +60,18 @@ impl Sha256ChainVariant {
             Sha256ChainVariant::IndexedString => "counter",
         }
     }
+}
 
-    /// Parse variant from string name.
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Sha256ChainVariant {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "iterated" => Some(Sha256ChainVariant::Iterated),
-            "indexed" | "indexed:be" => Some(Sha256ChainVariant::IndexedBinary { big_endian: true }),
-            "indexed:le" => Some(Sha256ChainVariant::IndexedBinary { big_endian: false }),
-            "counter" => Some(Sha256ChainVariant::IndexedString),
-            _ => None,
+            "iterated" => Ok(Sha256ChainVariant::Iterated),
+            "indexed" | "indexed:be" => Ok(Sha256ChainVariant::IndexedBinary { big_endian: true }),
+            "indexed:le" => Ok(Sha256ChainVariant::IndexedBinary { big_endian: false }),
+            "counter" => Ok(Sha256ChainVariant::IndexedString),
+            _ => Err(format!("Invalid SHA256 chain variant: '{}'. Valid: iterated, indexed, counter", s)),
         }
     }
 }
@@ -217,7 +223,7 @@ impl Sha256ChainConfig {
     }
 
     fn parse_variant(v: &str) -> Result<Sha256ChainVariant, String> {
-        Sha256ChainVariant::from_str(v).ok_or_else(|| {
+        v.parse::<Sha256ChainVariant>().map_err(|_| {
             format!(
                 "Invalid SHA256 chain variant: '{}'. Valid: iterated, indexed, counter",
                 v
@@ -242,12 +248,12 @@ mod tests {
 
     #[test]
     fn test_endian_from_str() {
-        assert_eq!(Sha256ChainEndian::from_str("be"), Some(Sha256ChainEndian::Big));
-        assert_eq!(Sha256ChainEndian::from_str("le"), Some(Sha256ChainEndian::Little));
-        assert_eq!(Sha256ChainEndian::from_str("big"), Some(Sha256ChainEndian::Big));
-        assert_eq!(Sha256ChainEndian::from_str("little"), Some(Sha256ChainEndian::Little));
-        assert_eq!(Sha256ChainEndian::from_str("BE"), Some(Sha256ChainEndian::Big));
-        assert_eq!(Sha256ChainEndian::from_str("invalid"), None);
+        assert_eq!("be".parse::<Sha256ChainEndian>(), Ok(Sha256ChainEndian::Big));
+        assert_eq!("le".parse::<Sha256ChainEndian>(), Ok(Sha256ChainEndian::Little));
+        assert_eq!("big".parse::<Sha256ChainEndian>(), Ok(Sha256ChainEndian::Big));
+        assert_eq!("little".parse::<Sha256ChainEndian>(), Ok(Sha256ChainEndian::Little));
+        assert_eq!("BE".parse::<Sha256ChainEndian>(), Ok(Sha256ChainEndian::Big));
+        assert!("invalid".parse::<Sha256ChainEndian>().is_err());
     }
 
     #[test]
@@ -260,28 +266,13 @@ mod tests {
 
     #[test]
     fn test_variant_from_str() {
-        assert_eq!(
-            Sha256ChainVariant::from_str("iterated"),
-            Some(Sha256ChainVariant::Iterated)
-        );
-        assert_eq!(
-            Sha256ChainVariant::from_str("indexed"),
-            Some(Sha256ChainVariant::IndexedBinary { big_endian: true })
-        );
-        assert_eq!(
-            Sha256ChainVariant::from_str("indexed:be"),
-            Some(Sha256ChainVariant::IndexedBinary { big_endian: true })
-        );
-        assert_eq!(
-            Sha256ChainVariant::from_str("indexed:le"),
-            Some(Sha256ChainVariant::IndexedBinary { big_endian: false })
-        );
-        assert_eq!(
-            Sha256ChainVariant::from_str("counter"),
-            Some(Sha256ChainVariant::IndexedString)
-        );
-        assert_eq!(Sha256ChainVariant::from_str("ITERATED"), Some(Sha256ChainVariant::Iterated));
-        assert_eq!(Sha256ChainVariant::from_str("unknown"), None);
+        assert_eq!("iterated".parse::<Sha256ChainVariant>(), Ok(Sha256ChainVariant::Iterated));
+        assert_eq!("indexed".parse::<Sha256ChainVariant>(), Ok(Sha256ChainVariant::IndexedBinary { big_endian: true }));
+        assert_eq!("indexed:be".parse::<Sha256ChainVariant>(), Ok(Sha256ChainVariant::IndexedBinary { big_endian: true }));
+        assert_eq!("indexed:le".parse::<Sha256ChainVariant>(), Ok(Sha256ChainVariant::IndexedBinary { big_endian: false }));
+        assert_eq!("counter".parse::<Sha256ChainVariant>(), Ok(Sha256ChainVariant::IndexedString));
+        assert_eq!("ITERATED".parse::<Sha256ChainVariant>(), Ok(Sha256ChainVariant::Iterated));
+        assert!("unknown".parse::<Sha256ChainVariant>().is_err());
     }
 
     #[test]

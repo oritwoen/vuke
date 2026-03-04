@@ -15,8 +15,10 @@ pub enum OutputFormat {
     Csv,
 }
 
-impl OutputFormat {
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl std::str::FromStr for OutputFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "table" => Ok(OutputFormat::Table),
             "json" => Ok(OutputFormat::Json),
@@ -268,19 +270,13 @@ mod tests {
 
     #[test]
     fn output_format_from_str() {
-        assert_eq!(
-            OutputFormat::from_str("table").unwrap(),
-            OutputFormat::Table
-        );
-        assert_eq!(
-            OutputFormat::from_str("TABLE").unwrap(),
-            OutputFormat::Table
-        );
-        assert_eq!(OutputFormat::from_str("json").unwrap(), OutputFormat::Json);
-        assert_eq!(OutputFormat::from_str("JSON").unwrap(), OutputFormat::Json);
-        assert_eq!(OutputFormat::from_str("csv").unwrap(), OutputFormat::Csv);
-        assert_eq!(OutputFormat::from_str("CSV").unwrap(), OutputFormat::Csv);
-        assert!(OutputFormat::from_str("xml").is_err());
+        assert_eq!("table".parse::<OutputFormat>().unwrap(), OutputFormat::Table);
+        assert_eq!("TABLE".parse::<OutputFormat>().unwrap(), OutputFormat::Table);
+        assert_eq!("json".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+        assert_eq!("JSON".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
+        assert_eq!("csv".parse::<OutputFormat>().unwrap(), OutputFormat::Csv);
+        assert_eq!("CSV".parse::<OutputFormat>().unwrap(), OutputFormat::Csv);
+        assert!("xml".parse::<OutputFormat>().is_err());
     }
 
     #[test]

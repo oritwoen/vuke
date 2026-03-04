@@ -14,20 +14,23 @@ pub enum LcgEndian {
 }
 
 impl LcgEndian {
-    /// Parse endianness from string ("be" or "le").
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "be" | "big" => Some(LcgEndian::Big),
-            "le" | "little" => Some(LcgEndian::Little),
-            _ => None,
-        }
-    }
-
     /// Short name for display.
     pub fn as_str(&self) -> &'static str {
         match self {
             LcgEndian::Big => "be",
             LcgEndian::Little => "le",
+        }
+    }
+}
+
+impl std::str::FromStr for LcgEndian {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "be" | "big" => Ok(LcgEndian::Big),
+            "le" | "little" => Ok(LcgEndian::Little),
+            _ => Err(format!("Invalid endian: '{}'. Valid: be, le", s)),
         }
     }
 }
@@ -50,15 +53,18 @@ impl LcgVariant {
     pub fn max_seed(&self) -> u64 {
         self.m - 1
     }
+}
 
-    /// Parse variant from string name.
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for LcgVariant {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "glibc" => Some(GLIBC),
-            "minstd" => Some(MINSTD),
-            "msvc" => Some(MSVC),
-            "borland" => Some(BORLAND),
-            _ => None,
+            "glibc" => Ok(GLIBC),
+            "minstd" => Ok(MINSTD),
+            "msvc" => Ok(MSVC),
+            "borland" => Ok(BORLAND),
+            _ => Err(format!("Invalid LCG variant: '{}'. Valid: glibc, minstd, msvc, borland", s)),
         }
     }
 }
@@ -203,21 +209,21 @@ mod tests {
 
     #[test]
     fn test_variant_from_str() {
-        assert_eq!(LcgVariant::from_str("glibc"), Some(GLIBC));
-        assert_eq!(LcgVariant::from_str("GLIBC"), Some(GLIBC));
-        assert_eq!(LcgVariant::from_str("minstd"), Some(MINSTD));
-        assert_eq!(LcgVariant::from_str("msvc"), Some(MSVC));
-        assert_eq!(LcgVariant::from_str("borland"), Some(BORLAND));
-        assert_eq!(LcgVariant::from_str("unknown"), None);
+        assert_eq!("glibc".parse::<LcgVariant>(), Ok(GLIBC));
+        assert_eq!("GLIBC".parse::<LcgVariant>(), Ok(GLIBC));
+        assert_eq!("minstd".parse::<LcgVariant>(), Ok(MINSTD));
+        assert_eq!("msvc".parse::<LcgVariant>(), Ok(MSVC));
+        assert_eq!("borland".parse::<LcgVariant>(), Ok(BORLAND));
+        assert!("unknown".parse::<LcgVariant>().is_err());
     }
 
     #[test]
     fn test_endian_from_str() {
-        assert_eq!(LcgEndian::from_str("be"), Some(LcgEndian::Big));
-        assert_eq!(LcgEndian::from_str("le"), Some(LcgEndian::Little));
-        assert_eq!(LcgEndian::from_str("big"), Some(LcgEndian::Big));
-        assert_eq!(LcgEndian::from_str("little"), Some(LcgEndian::Little));
-        assert_eq!(LcgEndian::from_str("invalid"), None);
+        assert_eq!("be".parse::<LcgEndian>(), Ok(LcgEndian::Big));
+        assert_eq!("le".parse::<LcgEndian>(), Ok(LcgEndian::Little));
+        assert_eq!("big".parse::<LcgEndian>(), Ok(LcgEndian::Big));
+        assert_eq!("little".parse::<LcgEndian>(), Ok(LcgEndian::Little));
+        assert!("invalid".parse::<LcgEndian>().is_err());
     }
 
     #[test]
@@ -252,9 +258,9 @@ impl LcgConfig {
         match parts.as_slice() {
             ["lcg"] => Ok(LcgConfig { variant: None, endian: LcgEndian::Big }),
             ["lcg", v] => {
-                if let Some(e) = LcgEndian::from_str(v) {
+                if let Ok(e) = v.parse::<LcgEndian>() {
                     Ok(LcgConfig { variant: None, endian: e })
-                } else if let Some(var) = LcgVariant::from_str(v) {
+                } else if let Ok(var) = v.parse::<LcgVariant>() {
                     Ok(LcgConfig { variant: Some(var), endian: LcgEndian::Big })
                 } else {
                     Err(format!(
@@ -264,10 +270,10 @@ impl LcgConfig {
                 }
             }
             ["lcg", v, e] => {
-                let variant = LcgVariant::from_str(v).ok_or_else(|| {
+                let variant = v.parse::<LcgVariant>().map_err(|_| {
                     format!("Invalid LCG variant: '{}'. Valid: glibc, minstd, msvc, borland", v)
                 })?;
-                let endian = LcgEndian::from_str(e).ok_or_else(|| {
+                let endian = e.parse::<LcgEndian>().map_err(|_| {
                     format!("Invalid endian: '{}'. Valid: be, le", e)
                 })?;
                 Ok(LcgConfig { variant: Some(variant), endian })

@@ -109,8 +109,8 @@ impl KeyDeriver {
         let pk_uncompressed = PublicKey::from_private_key(&self.secp, &priv_uncompressed);
 
         // P2PKH addresses
-        let p2pkh_compressed = Address::p2pkh(&pk_compressed, self.network).to_string();
-        let p2pkh_uncompressed = Address::p2pkh(&pk_uncompressed, self.network).to_string();
+        let p2pkh_compressed = Address::p2pkh(pk_compressed, self.network).to_string();
+        let p2pkh_uncompressed = Address::p2pkh(pk_uncompressed, self.network).to_string();
 
         // P2WPKH (requires compressed pubkey)
         let compressed_pk = CompressedPublicKey::from_slice(&secp_pubkey.serialize())

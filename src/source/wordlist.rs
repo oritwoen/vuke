@@ -24,10 +24,15 @@ impl WordlistSource {
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader
             .lines()
-            .filter_map(Result::ok)
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
+            .filter_map(|line| match line {
+                Ok(s) => {
+                    let trimmed = s.trim().to_string();
+                    if trimmed.is_empty() { None } else { Some(Ok(trimmed)) }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect::<std::io::Result<Vec<_>>>()?;
 
         Ok(Self { lines })
     }
