@@ -167,7 +167,12 @@ impl TransformType {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, String> {
+}
+
+impl std::str::FromStr for TransformType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s_lower = s.to_lowercase();
 
         match s_lower.as_str() {

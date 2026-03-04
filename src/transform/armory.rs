@@ -26,7 +26,7 @@ impl ArmoryTransform {
     fn generate_key(&self, seed: &[u8]) -> Option<Key> {
         // 1. Derive chaincode: HMAC-SHA256(key=SHA256(SHA256(root)), msg="Derive Chaincode from Root Key")
         let hash1 = Sha256::digest(seed);
-        let hash2 = Sha256::digest(&hash1);
+        let hash2 = Sha256::digest(hash1);
 
         let mut mac = HmacSha256::new_from_slice(&hash2).ok()?;
         mac.update(b"Derive Chaincode from Root Key");
@@ -58,8 +58,8 @@ impl ArmoryTransform {
             let pubkey = PublicKey::from_secret_key(&self.secp, &key);
             let pubkey_bytes = pubkey.serialize_uncompressed();
 
-            let h1 = Sha256::digest(&pubkey_bytes);
-            let h2 = Sha256::digest(&h1);
+            let h1 = Sha256::digest(pubkey_bytes);
+            let h2 = Sha256::digest(h1);
 
             let mut scalar_bytes = [0u8; 32];
             for i in 0..32 {

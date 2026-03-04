@@ -24,7 +24,7 @@ impl WordlistSource {
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader
             .lines()
-            .filter_map(Result::ok)
+            .map_while(Result::ok)
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();

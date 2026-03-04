@@ -159,7 +159,7 @@ pub fn stretch_key(seed: &[u8]) -> [u8; 32] {
     // Remaining iterations: x = SHA256(x + seed)
     for _ in 1..100_000 {
         let mut hasher = Sha256::new();
-        hasher.update(&x);
+        hasher.update(x);
         hasher.update(seed);
         x.copy_from_slice(&hasher.finalize());
     }
@@ -187,7 +187,7 @@ pub fn get_sequence(mpk: &[u8; 64], for_change: u8, index: u32) -> [u8; 32] {
 /// Double SHA256 hash.
 fn double_sha256(data: &[u8]) -> [u8; 32] {
     let first = Sha256::digest(data);
-    let second = Sha256::digest(&first);
+    let second = Sha256::digest(first);
 
     let mut result = [0u8; 32];
     result.copy_from_slice(&second);

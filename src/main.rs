@@ -19,11 +19,11 @@ use vuke::source::{
 use vuke::transform::{Transform, TransformType};
 
 fn parse_analyzer_type(s: &str) -> Result<AnalyzerType, String> {
-    AnalyzerType::from_str(s)
+    s.parse()
 }
 
 fn parse_transform_type(s: &str) -> Result<TransformType, String> {
-    TransformType::from_str(s)
+    s.parse()
 }
 
 fn parse_byte_size(s: &str) -> Result<u64, String> {
@@ -1079,7 +1079,7 @@ fn run_query(
     use vuke::output::{format_csv, format_json, format_schema, format_table, OutputFormat};
     use vuke::storage::QueryExecutor;
 
-    let output_format = OutputFormat::from_str(&format).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let output_format: OutputFormat = format.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?;
 
     let executor =
         QueryExecutor::new(&path).map_err(|e| anyhow::anyhow!("Failed to open storage: {}", e))?;

@@ -215,8 +215,12 @@ impl AnalyzerType {
             AnalyzerType::Heuristic,
         ]
     }
+}
 
-    pub fn from_str(s: &str) -> Result<Self, String> {
+impl std::str::FromStr for AnalyzerType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.to_lowercase();
         
         match s.as_str() {

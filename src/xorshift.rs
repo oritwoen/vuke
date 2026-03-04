@@ -42,19 +42,6 @@ impl XorshiftVariant {
         }
     }
 
-    /// Parse variant from string name.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "64" | "xorshift64" => Some(XorshiftVariant::Xorshift64),
-            "128" | "xorshift128" => Some(XorshiftVariant::Xorshift128),
-            "128plus" | "128+" | "plus" | "xorshift128+" => Some(XorshiftVariant::Xorshift128Plus),
-            "xoroshiro" | "starstar" | "xoroshiro128**" | "xoroshiro128starstar" => {
-                Some(XorshiftVariant::Xoroshiro128StarStar)
-            }
-            _ => None,
-        }
-    }
-
     /// Whether this variant uses 128-bit state (requires reduced seed space assumptions).
     pub fn is_128bit(&self) -> bool {
         matches!(
@@ -63,6 +50,22 @@ impl XorshiftVariant {
                 | XorshiftVariant::Xorshift128Plus
                 | XorshiftVariant::Xoroshiro128StarStar
         )
+    }
+}
+
+impl std::str::FromStr for XorshiftVariant {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "64" | "xorshift64" => Ok(XorshiftVariant::Xorshift64),
+            "128" | "xorshift128" => Ok(XorshiftVariant::Xorshift128),
+            "128plus" | "128+" | "plus" | "xorshift128+" => Ok(XorshiftVariant::Xorshift128Plus),
+            "xoroshiro" | "starstar" | "xoroshiro128**" | "xoroshiro128starstar" => {
+                Ok(XorshiftVariant::Xoroshiro128StarStar)
+            }
+            _ => Err(format!("Invalid xorshift variant: '{}'. Valid: 64, 128, 128plus, xoroshiro", s)),
+        }
     }
 }
 
@@ -339,7 +342,7 @@ impl XorshiftConfig {
         match parts.as_slice() {
             ["xorshift"] => Ok(XorshiftConfig { variant: None }),
             ["xorshift", v] => {
-                let variant = XorshiftVariant::from_str(v).ok_or_else(|| {
+                let variant = v.parse::<XorshiftVariant>().map_err(|_| {
                     format!(
                         "Invalid xorshift variant: '{}'. Valid: 64, 128, 128plus, xoroshiro",
                         v
@@ -461,39 +464,15 @@ mod tests {
 
     #[test]
     fn test_variant_from_str() {
-        assert_eq!(
-            XorshiftVariant::from_str("64"),
-            Some(XorshiftVariant::Xorshift64)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("xorshift64"),
-            Some(XorshiftVariant::Xorshift64)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("128"),
-            Some(XorshiftVariant::Xorshift128)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("128plus"),
-            Some(XorshiftVariant::Xorshift128Plus)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("128+"),
-            Some(XorshiftVariant::Xorshift128Plus)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("plus"),
-            Some(XorshiftVariant::Xorshift128Plus)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("xoroshiro"),
-            Some(XorshiftVariant::Xoroshiro128StarStar)
-        );
-        assert_eq!(
-            XorshiftVariant::from_str("starstar"),
-            Some(XorshiftVariant::Xoroshiro128StarStar)
-        );
-        assert_eq!(XorshiftVariant::from_str("invalid"), None);
+        assert_eq!("64".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xorshift64));
+        assert_eq!("xorshift64".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xorshift64));
+        assert_eq!("128".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xorshift128));
+        assert_eq!("128plus".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xorshift128Plus));
+        assert_eq!("128+".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xorshift128Plus));
+        assert_eq!("plus".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xorshift128Plus));
+        assert_eq!("xoroshiro".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xoroshiro128StarStar));
+        assert_eq!("starstar".parse::<XorshiftVariant>(), Ok(XorshiftVariant::Xoroshiro128StarStar));
+        assert!("invalid".parse::<XorshiftVariant>().is_err());
     }
 
     #[test]
