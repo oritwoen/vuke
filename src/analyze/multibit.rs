@@ -101,8 +101,19 @@ impl MultibitAnalyzer {
         };
 
         let reader = BufReader::new(file);
-        #[allow(clippy::lines_filter_map_ok)] // skip malformed lines, don't truncate dictionary
-        let lines: Vec<String> = reader.lines().filter_map(Result::ok).collect();
+        let mut lines: Vec<String> = Vec::new();
+        for line in reader.lines() {
+            match line {
+                Ok(l) => lines.push(l),
+                Err(e) => {
+                    return AnalysisResult {
+                        analyzer: self.name(),
+                        status: AnalysisStatus::Unknown,
+                        details: Some(format!("Failed to read mnemonic file: {}", e)),
+                    };
+                }
+            }
+        }
         
         if let Some(pb) = progress {
             pb.set_length(lines.len() as u64);
