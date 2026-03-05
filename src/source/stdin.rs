@@ -28,10 +28,11 @@ impl Source for StdinSource {
     fn process(
         &self,
         transforms: &[Box<dyn Transform>],
+        deriver: &KeyDeriver,
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats> {
-        let deriver = KeyDeriver::new();
+
         let stdin = io::stdin();
         let reader = stdin.lock();
 

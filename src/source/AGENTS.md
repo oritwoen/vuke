@@ -10,7 +10,8 @@ source/
 ├── range.rs      # Numeric range source (weak seed testing)
 ├── wordlist.rs   # File-based wordlist (brainwallet analysis)
 ├── timestamps.rs # Date range → Unix timestamps (time-based PRNG)
-└── stdin.rs      # Streaming from stdin (pipeline integration)
+├── stdin.rs      # Streaming from stdin (pipeline integration)
+└── files.rs      # File/directory source (binary data)
 ```
 
 ## WHERE TO LOOK
@@ -26,18 +27,13 @@ source/
 
 ```rust
 pub trait Source: Send + Sync {
-    fn process<T, O>(
+    fn process(
         &self,
-        transforms: &[T],
+        transforms: &[Box<dyn Transform>],
         deriver: &KeyDeriver,
         matcher: Option<&Matcher>,
-        output: &mut O,
-        no_gpu: bool,
-        progress: Option<&ProgressBar>,
-    ) -> ProcessStats
-    where
-        T: Transform,
-        O: Output;
+        output: &dyn Output,
+    ) -> Result<ProcessStats>;
 }
 ```
 
@@ -65,3 +61,4 @@ pub trait Source: Send + Sync {
 | `WordlistSource` | File path | Brainwallet dictionary attack |
 | `TimestampSource` | Date range | Time-based PRNG exploitation |
 | `StdinSource` | Stdin pipe | Pipeline integration |
+| `FilesSource` | File/directory path | Binary data key derivation |

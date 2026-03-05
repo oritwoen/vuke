@@ -44,6 +44,7 @@ impl Source for TimestampSource {
     fn process(
         &self,
         transforms: &[Box<dyn Transform>],
+        deriver: &KeyDeriver,
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats> {
@@ -58,7 +59,7 @@ impl Source for TimestampSource {
         pb.set_style(crate::default_progress_style());
 
         let timestamps: Vec<u64> = (self.start..=self.end).collect();
-        let deriver = KeyDeriver::new();
+
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
 
