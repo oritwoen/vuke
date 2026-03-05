@@ -395,22 +395,23 @@ fn main() -> Result<()> {
             storage_args,
             bitimage_args,
         } => {
-            let _network = parse_network(&network);
+            let network = parse_network(&network);
             let transform = apply_bitimage_config(transform, &bitimage_args);
-            run_generate(source, transform, output, verbose, &storage_args)
+            run_generate(source, transform, network, output, verbose, &storage_args)
         }
 
         Command::Scan {
             source,
             transform,
             targets,
-            network: _,
+            network,
             output,
             storage_args,
             bitimage_args,
         } => {
+            let network = parse_network(&network);
             let transform = apply_bitimage_config(transform, &bitimage_args);
-            run_scan(source, transform, targets, output, &storage_args)
+            run_scan(source, transform, network, targets, output, &storage_args)
         }
 
         Command::Single {
@@ -600,6 +601,7 @@ fn suppress_unused_storage(sa: &StorageArgs) {
 fn run_generate(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
+    network: bitcoin::Network,
     output_file: Option<PathBuf>,
     verbose: bool,
     sa: &StorageArgs,
@@ -635,8 +637,9 @@ fn run_generate(
         console_out
     };
 
+    let deriver = KeyDeriver::with_network(network);
     eprintln!("Generating keys...");
-    let stats = source.process(&transform_instances, None, output.as_ref())?;
+    let stats = source.process(&transform_instances, &deriver, None, output.as_ref())?;
     output.flush()?;
 
     eprintln!(
@@ -657,6 +660,7 @@ fn run_generate(
 fn run_scan(
     source_cmd: SourceCommand,
     transforms: Vec<TransformType>,
+    network: bitcoin::Network,
     targets: String,
     output_file: Option<PathBuf>,
     sa: &StorageArgs,
@@ -708,8 +712,9 @@ fn run_scan(
         console_out
     };
 
+    let deriver = KeyDeriver::with_network(network);
     eprintln!("Scanning...");
-    let stats = source.process(&transform_instances, Some(&matcher), output.as_ref())?;
+    let stats = source.process(&transform_instances, &deriver, Some(&matcher), output.as_ref())?;
     output.flush()?;
 
     eprintln!(

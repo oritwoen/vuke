@@ -14,6 +14,7 @@ pub use stdin::StdinSource;
 pub use timestamps::TimestampSource;
 pub use wordlist::WordlistSource;
 
+use crate::derive::KeyDeriver;
 use crate::matcher::Matcher;
 use crate::output::Output;
 use crate::transform::Transform;
@@ -25,6 +26,7 @@ pub trait Source: Send + Sync {
     fn process(
         &self,
         transforms: &[Box<dyn Transform>],
+        deriver: &KeyDeriver,
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats>;

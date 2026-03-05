@@ -92,13 +92,14 @@ impl Source for FilesSource {
     fn process(
         &self,
         transforms: &[Box<dyn Transform>],
+        deriver: &KeyDeriver,
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats> {
         let pb = ProgressBar::new(self.files.len() as u64);
         pb.set_style(crate::default_progress_style());
 
-        let deriver = KeyDeriver::new();
+
         let processed = std::sync::atomic::AtomicU64::new(0);
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);

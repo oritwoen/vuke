@@ -42,13 +42,14 @@ impl Source for WordlistSource {
     fn process(
         &self,
         transforms: &[Box<dyn Transform>],
+        deriver: &KeyDeriver,
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats> {
         let pb = ProgressBar::new(self.lines.len() as u64);
         pb.set_style(crate::default_progress_style());
 
-        let deriver = KeyDeriver::new();
+
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
 
