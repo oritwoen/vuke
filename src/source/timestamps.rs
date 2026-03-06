@@ -58,12 +58,10 @@ impl Source for TimestampSource {
         let pb = ProgressBar::new(total);
         pb.set_style(crate::default_progress_style());
 
-        let timestamps: Vec<u64> = (self.start..=self.end).collect();
-
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
 
-        timestamps.par_iter().for_each(|&ts| {
+        (self.start..=self.end).into_par_iter().for_each(|ts| {
             // Process base timestamp
             process_timestamp(ts, transforms, &deriver, matcher, output, &stats, &matches);
 

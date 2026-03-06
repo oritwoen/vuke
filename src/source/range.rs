@@ -10,6 +10,8 @@ use crate::matcher::Matcher;
 use crate::output::Output;
 use crate::transform::{Input, Transform};
 
+const BATCH_SIZE: u64 = 1000;
+
 /// Generate keys from a numeric range
 pub struct RangeSource {
     pub start: u64,
@@ -34,14 +36,18 @@ impl Source for RangeSource {
         let pb = ProgressBar::new(count);
         pb.set_style(crate::default_progress_style());
 
-        let range: Vec<u64> = (self.start..=self.end).collect();
-
-
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
 
-        range.par_chunks(1000).for_each(|chunk| {
-            let inputs: Vec<Input> = chunk.iter().map(|&v| Input::from_u64(v)).collect();
+        let num_batches = (count + BATCH_SIZE - 1) / BATCH_SIZE;
+
+        (0..num_batches).into_par_iter().for_each(|batch_idx| {
+            let batch_start = self.start + batch_idx * BATCH_SIZE;
+            let batch_end = (batch_start + BATCH_SIZE - 1).min(self.end);
+
+            let inputs: Vec<Input> = (batch_start..=batch_end)
+                .map(Input::from_u64)
+                .collect();
             let mut buffer = Vec::with_capacity(inputs.len() * 3);
 
             for transform in transforms {
@@ -59,7 +65,6 @@ impl Source for RangeSource {
                             matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     } else {
-                        // No matcher - output all keys
                         output.key(source, transform.name(), &derived).ok();
                     }
 
@@ -67,7 +72,7 @@ impl Source for RangeSource {
                 }
             }
 
-            pb.inc(chunk.len() as u64);
+            pb.inc((batch_end - batch_start + 1) as u64);
         });
 
         pb.finish_and_clear();
