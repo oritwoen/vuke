@@ -39,11 +39,11 @@ impl Source for RangeSource {
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
 
-        let num_batches = (count + BATCH_SIZE - 1) / BATCH_SIZE;
+        let num_batches = count / BATCH_SIZE + u64::from(count % BATCH_SIZE != 0);
 
         (0..num_batches).into_par_iter().for_each(|batch_idx| {
             let batch_start = self.start + batch_idx * BATCH_SIZE;
-            let batch_end = (batch_start + BATCH_SIZE - 1).min(self.end);
+            let batch_end = batch_start.saturating_add(BATCH_SIZE - 1).min(self.end);
 
             let inputs: Vec<Input> = (batch_start..=batch_end)
                 .map(Input::from_u64)
