@@ -71,6 +71,13 @@ impl Source for TimestampSource {
             );
         }
 
+        if self.microseconds && self.end > (u64::MAX - 999) / 1000 {
+            anyhow::bail!(
+                "Timestamp value overflow in microseconds mode for end timestamp {}",
+                self.end
+            );
+        }
+
         let count = self
             .end
             .checked_sub(self.start)
