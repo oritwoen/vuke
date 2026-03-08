@@ -24,13 +24,28 @@ impl TimestampSource {
             .and_hms_opt(0, 0, 0)
             .unwrap()
             .and_utc()
-            .timestamp() as u64;
+            .timestamp();
 
         let end = NaiveDate::parse_from_str(end_date, "%Y-%m-%d")?
             .and_hms_opt(23, 59, 59)
             .unwrap()
             .and_utc()
-            .timestamp() as u64;
+            .timestamp();
+
+        if start < 0 || end < 0 {
+            anyhow::bail!("Dates before 1970-01-01 are not supported");
+        }
+
+        if end < start {
+            anyhow::bail!(
+                "Invalid date range: end ({}) must be on or after start ({})",
+                end_date,
+                start_date
+            );
+        }
+
+        let start = u64::try_from(start)?;
+        let end = u64::try_from(end)?;
 
         Ok(Self {
             start,
@@ -48,9 +63,39 @@ impl Source for TimestampSource {
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats> {
-        let count = self.end - self.start + 1;
+        if self.end < self.start {
+            anyhow::bail!(
+                "Invalid timestamp range: end ({}) must be greater than or equal to start ({})",
+                self.end,
+                self.start
+            );
+        }
+
+        if self.microseconds && self.end > (u64::MAX - 999) / 1000 {
+            anyhow::bail!(
+                "Timestamp value overflow in microseconds mode for end timestamp {}",
+                self.end
+            );
+        }
+
+        let count = self
+            .end
+            .checked_sub(self.start)
+            .and_then(|delta| delta.checked_add(1))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Timestamp range size overflow for {}..={}",
+                    self.start,
+                    self.end
+                )
+            })?;
         let total = if self.microseconds {
-            count * 1000
+            count.checked_mul(1001).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Timestamp workload overflow in microseconds mode for {} inputs",
+                    count
+                )
+            })?
         } else {
             count
         };
@@ -86,6 +131,73 @@ impl Source for TimestampSource {
             keys_generated: stats.load(std::sync::atomic::Ordering::Relaxed),
             matches_found: matches.load(std::sync::atomic::Ordering::Relaxed),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::derive::KeyDeriver;
+    use crate::output::ConsoleOutput;
+
+    #[test]
+    fn from_dates_rejects_descending_date_range() {
+        let result = TimestampSource::from_dates("2025-01-02", "2025-01-01", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_dates_rejects_pre_epoch_dates() {
+        let result = TimestampSource::from_dates("1969-12-31", "1970-01-01", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_counts_microseconds_mode_correctly() {
+        let source = TimestampSource {
+            start: 1,
+            end: 1,
+            microseconds: true,
+        };
+        let deriver = KeyDeriver::new();
+        let output = ConsoleOutput::new();
+        let transforms: Vec<Box<dyn Transform>> = Vec::new();
+
+        let stats = source
+            .process(&transforms, &deriver, None, &output)
+            .expect("timestamp processing should succeed");
+
+        assert_eq!(stats.inputs_processed, 1001);
+    }
+
+    #[test]
+    fn process_rejects_descending_timestamp_range() {
+        let source = TimestampSource {
+            start: 10,
+            end: 1,
+            microseconds: false,
+        };
+        let deriver = KeyDeriver::new();
+        let output = ConsoleOutput::new();
+        let transforms: Vec<Box<dyn Transform>> = Vec::new();
+
+        let result = source.process(&transforms, &deriver, None, &output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_rejects_overflowing_timestamp_range_size() {
+        let source = TimestampSource {
+            start: 0,
+            end: u64::MAX,
+            microseconds: false,
+        };
+        let deriver = KeyDeriver::new();
+        let output = ConsoleOutput::new();
+        let transforms: Vec<Box<dyn Transform>> = Vec::new();
+
+        let result = source.process(&transforms, &deriver, None, &output);
+        assert!(result.is_err());
     }
 }
 

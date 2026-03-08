@@ -32,7 +32,21 @@ impl Source for RangeSource {
         matcher: Option<&Matcher>,
         output: &dyn Output,
     ) -> Result<ProcessStats> {
-        let count = self.end - self.start + 1;
+        if self.end < self.start {
+            anyhow::bail!(
+                "Invalid range: end ({}) must be greater than or equal to start ({})",
+                self.end,
+                self.start
+            );
+        }
+
+        let count = self
+            .end
+            .checked_sub(self.start)
+            .and_then(|delta| delta.checked_add(1))
+            .ok_or_else(|| {
+                anyhow::anyhow!("Range size overflow for {}..={}", self.start, self.end)
+            })?;
         let pb = ProgressBar::new(count);
         pb.set_style(crate::default_progress_style());
 
@@ -45,9 +59,7 @@ impl Source for RangeSource {
             let batch_start = self.start + batch_idx * BATCH_SIZE;
             let batch_end = batch_start.saturating_add(BATCH_SIZE - 1).min(self.end);
 
-            let inputs: Vec<Input> = (batch_start..=batch_end)
-                .map(Input::from_u64)
-                .collect();
+            let inputs: Vec<Input> = (batch_start..=batch_end).map(Input::from_u64).collect();
             let mut buffer = Vec::with_capacity(inputs.len() * 3);
 
             for transform in transforms {
@@ -82,5 +94,34 @@ impl Source for RangeSource {
             keys_generated: stats.load(std::sync::atomic::Ordering::Relaxed),
             matches_found: matches.load(std::sync::atomic::Ordering::Relaxed),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::derive::KeyDeriver;
+    use crate::output::ConsoleOutput;
+
+    #[test]
+    fn process_rejects_descending_range() {
+        let source = RangeSource::new(10, 1);
+        let deriver = KeyDeriver::new();
+        let output = ConsoleOutput::new();
+        let transforms: Vec<Box<dyn Transform>> = Vec::new();
+
+        let result = source.process(&transforms, &deriver, None, &output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_rejects_overflowing_range_size() {
+        let source = RangeSource::new(0, u64::MAX);
+        let deriver = KeyDeriver::new();
+        let output = ConsoleOutput::new();
+        let transforms: Vec<Box<dyn Transform>> = Vec::new();
+
+        let result = source.process(&transforms, &deriver, None, &output);
+        assert!(result.is_err());
     }
 }
