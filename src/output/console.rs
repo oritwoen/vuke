@@ -6,7 +6,7 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 use std::sync::Mutex;
 
-use super::Output;
+use super::{escape_csv_field, Output};
 use crate::derive::DerivedKey;
 use crate::matcher::MatchInfo;
 
@@ -76,8 +76,13 @@ impl Output for ConsoleOutput {
             // Compact format: source,transform,privkey,address_compressed
             writeln!(
                 w,
-                "{},{},{},{}",
-                source, transform, derived.private_key_hex, derived.p2pkh_compressed
+                "{}",
+                format_compact_csv_row(
+                    source,
+                    transform,
+                    &derived.private_key_hex,
+                    &derived.p2pkh_compressed,
+                )
             )?;
         }
 
@@ -122,6 +127,19 @@ impl Output for ConsoleOutput {
     }
 }
 
+fn format_compact_csv_row(
+    source: &str,
+    transform: &str,
+    private_key: &str,
+    address: &str,
+) -> String {
+    [source, transform, private_key, address]
+        .into_iter()
+        .map(escape_csv_field)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,6 +180,48 @@ mod tests {
 
         let content = std::fs::read_to_string(temp.path()).unwrap();
         assert!(content.contains("test_source,sha256,abc123,1Address"));
+    }
+
+    #[test]
+    fn test_to_file_writes_compact_format_with_commas_in_source() {
+        let temp = NamedTempFile::new().unwrap();
+        let output = ConsoleOutput::to_file(temp.path()).unwrap();
+
+        output
+            .key("test,source", "sha256", &make_test_key())
+            .unwrap();
+        output.flush().unwrap();
+
+        let content = std::fs::read_to_string(temp.path()).unwrap();
+        assert!(content.contains("\"test,source\",sha256,abc123,1Address"));
+    }
+
+    #[test]
+    fn test_to_file_writes_compact_format_with_quotes_in_source() {
+        let temp = NamedTempFile::new().unwrap();
+        let output = ConsoleOutput::to_file(temp.path()).unwrap();
+
+        output
+            .key("say \"hello\"", "sha256", &make_test_key())
+            .unwrap();
+        output.flush().unwrap();
+
+        let content = std::fs::read_to_string(temp.path()).unwrap();
+        assert!(content.contains("\"say \"\"hello\"\"\",sha256,abc123,1Address"));
+    }
+
+    #[test]
+    fn test_to_file_writes_compact_format_with_newlines_in_source() {
+        let temp = NamedTempFile::new().unwrap();
+        let output = ConsoleOutput::to_file(temp.path()).unwrap();
+
+        output
+            .key("line1\nline2", "sha256", &make_test_key())
+            .unwrap();
+        output.flush().unwrap();
+
+        let content = std::fs::read_to_string(temp.path()).unwrap();
+        assert!(content.contains("\"line1\nline2\",sha256,abc123,1Address"));
     }
 
     #[test]
