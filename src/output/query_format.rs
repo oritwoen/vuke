@@ -5,6 +5,7 @@ use std::sync::Arc;
 use arrow::datatypes::Schema;
 use comfy_table::{presets::UTF8_FULL, Cell, Color, ContentArrangement, Table};
 
+use super::escape_csv_field;
 use crate::storage::{Row, Value};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -216,14 +217,6 @@ fn format_value_csv(value: Option<&Value>) -> String {
     }
 }
 
-fn escape_csv_field(field: &str) -> String {
-    if field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r') {
-        format!("\"{}\"", field.replace('"', "\"\""))
-    } else {
-        field.to_string()
-    }
-}
-
 pub fn format_schema(schema: &Schema) -> String {
     let mut table = Table::new();
     table
@@ -270,8 +263,14 @@ mod tests {
 
     #[test]
     fn output_format_from_str() {
-        assert_eq!("table".parse::<OutputFormat>().unwrap(), OutputFormat::Table);
-        assert_eq!("TABLE".parse::<OutputFormat>().unwrap(), OutputFormat::Table);
+        assert_eq!(
+            "table".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Table
+        );
+        assert_eq!(
+            "TABLE".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Table
+        );
         assert_eq!("json".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
         assert_eq!("JSON".parse::<OutputFormat>().unwrap(), OutputFormat::Json);
         assert_eq!("csv".parse::<OutputFormat>().unwrap(), OutputFormat::Csv);
@@ -373,6 +372,22 @@ mod tests {
     #[test]
     fn escape_csv_field_with_quote() {
         assert_eq!(escape_csv_field("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn escape_csv_field_with_boundary_whitespace() {
+        assert_eq!(escape_csv_field(" leading"), "\" leading\"");
+        assert_eq!(escape_csv_field("trailing "), "\"trailing \"");
+        assert_eq!(escape_csv_field("\ttab"), "\"\ttab\"");
+        assert_eq!(escape_csv_field("tab\t"), "\"tab\t\"");
+        assert_eq!(
+            escape_csv_field("\u{00A0}nbsp-leading"),
+            "\"\u{00A0}nbsp-leading\""
+        );
+        assert_eq!(
+            escape_csv_field("nbsp-trailing\u{00A0}"),
+            "\"nbsp-trailing\u{00A0}\""
+        );
     }
 
     #[test]

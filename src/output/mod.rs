@@ -18,6 +18,22 @@ use crate::derive::DerivedKey;
 use crate::matcher::MatchInfo;
 use anyhow::Result;
 
+pub(crate) fn escape_csv_field(field: &str) -> String {
+    let has_boundary_whitespace = field.chars().next().is_some_and(char::is_whitespace)
+        || field.chars().last().is_some_and(char::is_whitespace);
+
+    if has_boundary_whitespace
+        || field.contains(',')
+        || field.contains('"')
+        || field.contains('\n')
+        || field.contains('\r')
+    {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}
+
 /// Output trait for handling generated keys.
 pub trait Output: Send + Sync {
     /// Output a key (no matcher, output all keys).
