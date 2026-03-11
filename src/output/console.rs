@@ -214,14 +214,14 @@ mod tests {
     fn test_to_file_writes_compact_format_with_newlines_in_source() {
         let temp = NamedTempFile::new().unwrap();
         let output = ConsoleOutput::to_file(temp.path()).unwrap();
+        let source = "line1\nline2";
 
-        output
-            .key("line1\nline2", "sha256", &make_test_key())
-            .unwrap();
+        output.key(source, "sha256", &make_test_key()).unwrap();
         output.flush().unwrap();
 
         let content = std::fs::read_to_string(temp.path()).unwrap();
-        assert!(content.contains("\"line1\nline2\",sha256,abc123,1Address"));
+        let expected_row = format_compact_csv_row(source, "sha256", "abc123", "1Address");
+        assert_eq!(content, format!("{}\n", expected_row));
     }
 
     #[test]

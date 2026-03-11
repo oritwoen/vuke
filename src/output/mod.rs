@@ -19,7 +19,15 @@ use crate::matcher::MatchInfo;
 use anyhow::Result;
 
 pub(crate) fn escape_csv_field(field: &str) -> String {
-    if field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r') {
+    let has_boundary_whitespace = field.chars().next().is_some_and(char::is_whitespace)
+        || field.chars().last().is_some_and(char::is_whitespace);
+
+    if has_boundary_whitespace
+        || field.contains(',')
+        || field.contains('"')
+        || field.contains('\n')
+        || field.contains('\r')
+    {
         format!("\"{}\"", field.replace('"', "\"\""))
     } else {
         field.to_string()

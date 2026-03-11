@@ -375,6 +375,22 @@ mod tests {
     }
 
     #[test]
+    fn escape_csv_field_with_boundary_whitespace() {
+        assert_eq!(escape_csv_field(" leading"), "\" leading\"");
+        assert_eq!(escape_csv_field("trailing "), "\"trailing \"");
+        assert_eq!(escape_csv_field("\ttab"), "\"\ttab\"");
+        assert_eq!(escape_csv_field("tab\t"), "\"tab\t\"");
+        assert_eq!(
+            escape_csv_field("\u{00A0}nbsp-leading"),
+            "\"\u{00A0}nbsp-leading\""
+        );
+        assert_eq!(
+            escape_csv_field("nbsp-trailing\u{00A0}"),
+            "\"nbsp-trailing\u{00A0}\""
+        );
+    }
+
+    #[test]
     fn format_value_json_types() {
         assert_eq!(format_value_json(&Value::Null), "null");
         assert_eq!(format_value_json(&Value::Int64(42)), "42");
