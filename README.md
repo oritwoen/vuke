@@ -663,68 +663,91 @@ fn main() {
 
 ```
 src/
-├── main.rs          # CLI entry point
-├── lib.rs           # Library exports
-├── derive.rs        # Private key → address derivation
-├── matcher.rs       # Address matching against targets
-├── network.rs       # Bitcoin network handling
-├── benchmark.rs     # Performance testing
-├── lcg.rs           # LCG PRNG shared logic
-├── xorshift.rs      # Xorshift PRNG shared logic
-├── mt64.rs          # MT19937-64 PRNG shared logic
-├── multibit.rs      # MultiBit HD bug logic (PBKDF2, BIP32)
-├── electrum.rs      # Electrum pre-BIP39 deterministic derivation
-├── sha256_chain.rs  # SHA256 chain shared logic (iterated/indexed)
-├── bitimage.rs      # Bitimage puzzle derivation logic
+├── main.rs            # CLI entry point (clap derive)
+├── lib.rs             # Library exports
+├── derive.rs          # Private key → address derivation
+├── matcher.rs         # Address matching against targets
+├── network.rs         # Bitcoin network handling
+├── benchmark.rs       # Performance testing
+├── provider.rs        # Data provider system (boha puzzles)
+├── lcg.rs             # LCG PRNG shared logic
+├── xorshift.rs        # Xorshift PRNG shared logic
+├── mt64.rs            # MT19937-64 PRNG shared logic
+├── multibit.rs        # MultiBit HD bug logic (PBKDF2, BIP32)
+├── electrum.rs        # Electrum pre-BIP39 deterministic derivation
+├── sha256_chain.rs    # SHA256 chain shared logic (iterated/indexed)
+├── bitimage.rs        # Bitimage puzzle derivation logic
 ├── analyze/
-│   ├── mod.rs       # Analyzer trait and types
-│   ├── key_parser.rs # Parse hex/WIF/decimal keys
-│   ├── milksad.rs   # MT19937 brute-force
-│   ├── mt64.rs      # MT19937-64 brute-force (requires cascade)
-│   ├── multibit.rs  # MultiBit HD mnemonic verification
-│   ├── lcg.rs       # LCG brute-force (glibc, minstd, msvc, borland)
-│   ├── xorshift.rs  # Xorshift brute-force (requires cascade)
-│   ├── sha256_chain.rs # SHA256 chain brute-force
-│   ├── direct.rs    # Pattern detection
-│   ├── heuristic.rs # Statistical analysis
-│   └── output.rs    # Plain text and JSON formatting
+│   ├── mod.rs         # Analyzer trait and types
+│   ├── key_parser.rs  # Parse hex/WIF/decimal keys
+│   ├── output.rs      # Plain text and JSON formatting
+│   ├── milksad.rs     # MT19937 brute-force (GPU accelerated)
+│   ├── mt64.rs        # MT19937-64 brute-force (requires cascade)
+│   ├── multibit.rs    # MultiBit HD mnemonic verification
+│   ├── lcg.rs         # LCG brute-force (glibc, minstd, msvc, borland)
+│   ├── xorshift.rs    # Xorshift brute-force (requires cascade)
+│   ├── sha256_chain.rs # SHA256 chain brute-force (GPU accelerated)
+│   ├── direct.rs      # Pattern detection
+│   └── heuristic.rs   # Statistical analysis
 ├── source/
-│   ├── mod.rs       # Source trait and types
-│   ├── range.rs     # Numeric range source
-│   ├── wordlist.rs  # File-based wordlist
-│   ├── timestamps.rs # Date range → Unix timestamps
-│   ├── stdin.rs     # Streaming from stdin
-│   └── files.rs     # File/directory source for binary data
-├── storage/
-│   ├── mod.rs       # StorageBackend trait
-│   ├── parquet_backend.rs # Parquet file writer
-│   ├── query.rs     # DuckDB SQL executor
-│   ├── schema.rs    # Arrow schema definitions
-│   └── cloud/       # S3-compatible upload
-│       ├── mod.rs   # CloudUploader trait
-│       ├── s3.rs    # S3/R2/MinIO implementation
-│       ├── sync.rs  # Batch upload with concurrency
-│       ├── progress.rs # Upload progress tracking
-│       └── error.rs # Cloud error types
+│   ├── mod.rs         # Source trait and types
+│   ├── range.rs       # Numeric range source
+│   ├── wordlist.rs    # File-based wordlist
+│   ├── timestamps.rs  # Date range → Unix timestamps
+│   ├── stdin.rs       # Streaming from stdin
+│   └── files.rs       # File/directory source for binary data
+├── output/
+│   ├── mod.rs         # Output trait
+│   ├── console.rs     # Console output (compact CSV + verbose YAML)
+│   ├── multi.rs       # Multi-output dispatcher
+│   ├── storage.rs     # Parquet backend bridge (feature: storage)
+│   └── query_format.rs # DuckDB result formatting (feature: storage-query)
 ├── transform/
-│   ├── mod.rs       # Transform trait and types
-│   ├── input.rs     # Input value representation
-│   ├── direct.rs    # Raw bytes transform
-│   ├── sha256.rs    # SHA256 hashing
+│   ├── mod.rs         # Transform trait and types
+│   ├── input.rs       # Input value representation
+│   ├── direct.rs      # Raw bytes transform
+│   ├── sha256.rs      # SHA256 hashing
 │   ├── double_sha256.rs # Double SHA256
-│   ├── md5.rs       # MD5 hashing
-│   ├── milksad.rs   # MT19937 PRNG (CVE-2023-39910)
-│   ├── mt64.rs      # MT19937-64 PRNG transform
-│   ├── multibit.rs  # MultiBit HD seed-as-entropy bug
-│   ├── electrum.rs  # Electrum pre-BIP39 deterministic derivation
-│   ├── lcg.rs       # LCG PRNG transform
-│   ├── xorshift.rs  # Xorshift PRNG transform
+│   ├── md5.rs         # MD5 hashing
+│   ├── milksad.rs     # MT19937 PRNG (CVE-2023-39910)
+│   ├── mt64.rs        # MT19937-64 PRNG transform
+│   ├── multibit.rs    # MultiBit HD seed-as-entropy bug
+│   ├── electrum.rs    # Electrum pre-BIP39 deterministic derivation
+│   ├── lcg.rs         # LCG PRNG transform
+│   ├── xorshift.rs    # Xorshift PRNG transform
 │   ├── sha256_chain.rs # SHA256 chain transform
-│   ├── bitimage.rs  # File-derived HD keys (Bitimage puzzle)
-│   └── armory.rs    # Armory HD derivation
-└── output/
-    ├── mod.rs       # Output trait
-    └── console.rs   # Console output handler
+│   ├── bitimage.rs    # File-derived HD keys (Bitimage puzzle)
+│   └── armory.rs      # Armory HD derivation
+├── gpu/               # WebGPU acceleration (feature: gpu)
+│   ├── mod.rs         # Module exports
+│   ├── context.rs     # GPU device initialization
+│   ├── error.rs       # GPU error types
+│   ├── buffer.rs      # GPU buffer utilities
+│   ├── hash.rs        # SHA256/MD5 hash pipelines
+│   ├── mt19937.rs     # MT19937 brute-force pipeline
+│   ├── sha256_chain.rs # SHA256 chain pipeline
+│   └── shaders/       # WGSL compute shaders
+│       ├── mt19937.wgsl
+│       ├── sha256.wgsl
+│       └── md5.wgsl
+└── storage/           # Persistent storage (feature: storage)
+    ├── mod.rs         # StorageBackend trait
+    ├── schema.rs      # Arrow schema definitions
+    ├── parquet_backend.rs # Parquet file writer with auto-chunking
+    ├── query.rs       # DuckDB SQL executor (feature: storage-query)
+    ├── cloud/         # S3-compatible upload (feature: storage-cloud)
+    │   ├── mod.rs     # CloudUploader trait
+    │   ├── s3.rs      # S3/R2/MinIO implementation
+    │   ├── credentials.rs # Credential resolution
+    │   ├── sync.rs    # Batch upload with concurrency
+    │   ├── progress.rs # Upload progress tracking
+    │   └── error.rs   # Cloud error types
+    └── iceberg/       # Iceberg catalog (feature: storage-iceberg)
+        ├── mod.rs     # Iceberg integration entry
+        ├── catalog.rs # REST catalog client
+        ├── schema.rs  # Iceberg schema mapping
+        ├── partition.rs # Partition spec
+        └── error.rs   # Iceberg error types
 ```
 
 ## Requirements
