@@ -1,141 +1,194 @@
-# VUKE - PROJECT KNOWLEDGE BASE
+# VUKE
 
-**Generated:** 2025-12-31
-**Commit:** c1f2d45
-**Branch:** main
+Bitcoin key vulnerability research tool. Reproduces historical weak key generation (brainwallets, weak PRNGs, derivation bugs) and analyzes keys for vulnerable origins. Rust, optional WebGPU acceleration.
 
-## OVERVIEW
+## Quick Commands
 
-Bitcoin key vulnerability research tool - reproduces historical weak key generation (brainwallets, weak PRNGs, derivation bugs) and analyzes keys for vulnerable origins. Rust + optional WebGPU acceleration.
+```bash
+# Build
+cargo build --release
+cargo build --release --features gpu          # WebGPU acceleration
+cargo build --release --features storage      # Parquet output
+cargo build --release --features storage-query # + DuckDB queries
 
-## STRUCTURE
+# Test
+cargo test                                     # All tests
+cargo test test_name -- --exact                # Single test by name
+cargo test transform::mt64::tests              # All tests in a module
+cargo test --no-fail-fast                      # Don't stop on first failure
 
-```
-vuke/
-├── src/
-│   ├── analyze/      # Reverse-engineer key origins (brute-force, heuristics)
-│   ├── transform/    # Forward key generation (SHA256, PRNGs, derivation)
-│   ├── gpu/          # WebGPU acceleration (WGSL shaders, pipelines)
-│   ├── source/       # Input providers (range, wordlist, timestamps, stdin)
-│   ├── output/       # Result formatting (console, files)
-│   ├── storage/      # Parquet/Arrow TB-scale persistence
-│   ├── main.rs       # CLI: generate, scan, single, bench, analyze commands
-│   ├── lib.rs        # Library exports
-│   ├── derive.rs     # Key → addresses/WIF derivation
-│   ├── matcher.rs    # Target address matching
-│   └── {prng}.rs     # Shared PRNG logic (lcg, xorshift, mt64, sha256_chain)
-├── benches/          # Criterion benchmarks (codspeed-criterion-compat)
-└── src/gpu/shaders/  # WGSL compute shaders
+# Bench
+cargo bench                                    # Criterion benchmarks (codspeed-criterion-compat)
+
+# Release
+just release 0.8.0                             # Bump version, changelog, tag, commit
 ```
 
-## WHERE TO LOOK
+No rustfmt.toml or clippy.toml — default Rust formatting and lints apply.
 
-| Task | Location | Notes |
-|------|----------|-------|
-| Add new vulnerability | `src/transform/{name}.rs` + `src/analyze/{name}.rs` | Implement both Transform and Analyzer |
-| Add PRNG variant | `src/{prng}.rs` shared logic + transform + analyze | Keep config/logic in shared module |
-| GPU acceleration | `src/gpu/shaders/{algo}.wgsl` + `src/gpu/{algo}.rs` | Feature-gated behind `gpu` |
-| New input source | `src/source/{name}.rs` | Implement Source trait |
-| New output format | `src/output/{name}.rs` | Implement Output trait |
-| CLI changes | `src/main.rs` | clap derive macros |
-| Key derivation | `src/derive.rs` | secp256k1 + bitcoin crate |
-| Storage backend | `src/storage/{name}.rs` | Implement StorageBackend trait |
+## Codebase Map
 
-## CODE MAP
+```
+src/
+├── main.rs              # CLI entry (clap derive): generate, scan, single, bench, analyze
+├── lib.rs               # Public API exports
+├── derive.rs            # Key → addresses/WIF derivation (secp256k1 + bitcoin crate)
+├── matcher.rs           # Target address matching
+├── network.rs           # Bitcoin network handling
+├── benchmark.rs         # Performance utilities
+├── provider.rs          # Puzzle data provider (feature: boha)
+│
+├── transform/           # Forward: Input → Key generation (see src/transform/AGENTS.md)
+├── analyze/             # Reverse: Key → origin detection (see src/analyze/AGENTS.md)
+├── source/              # Input providers: range, wordlist, timestamps, stdin, files (see src/source/AGENTS.md)
+├── output/              # Result formatting: console CSV, multi-output, storage bridge
+├── gpu/                 # WebGPU acceleration (see src/gpu/AGENTS.md)
+├── storage/             # Parquet/Arrow persistence (see src/storage/AGENTS.md)
+│
+├── {prng}.rs            # Shared PRNG logic used by BOTH transform/ and analyze/
+│                        # (mt64.rs, xorshift.rs, lcg.rs, sha256_chain.rs, electrum.rs, multibit.rs)
+└── bitimage.rs          # Bitimage puzzle key integration
+```
 
-**Core Traits** (all require `Send + Sync`):
+### Data Flow
 
-| Trait | Location | Purpose |
-|-------|----------|---------|
-| `Transform` | `src/transform/mod.rs` | Input → Key generation |
-| `Analyzer` | `src/analyze/mod.rs` | Key origin detection |
-| `Source` | `src/source/mod.rs` | Input batch processing |
-| `Output` | `src/output/mod.rs` | Result formatting |
-| `StorageBackend` | `src/storage/mod.rs` | Persistent result storage |
-
-**Data Flow**:
 - **Generate/Scan**: Source → Transform → KeyDeriver → Matcher → Output
 - **Analyze**: Key → Analyzer(s) → AnalysisResult
 
-**Key Types**:
-- `Key`: `[u8; 32]` private key
-- `Input`: Multi-representation (string, u64, bytes_be/le)
-- `DerivedKey`: Full derivation (WIF, P2PKH, P2WPKH)
+### Core Traits (all `Send + Sync`)
 
-## CONVENTIONS
+| Trait | Location | Signature |
+|-------|----------|-----------|
+| `Transform` | `src/transform/mod.rs` | `apply_batch(&[Input], &mut Vec<(String, Key)>)` |
+| `Analyzer` | `src/analyze/mod.rs` | `analyze(&Key, &AnalysisConfig, Option<&ProgressBar>) → AnalysisResult` |
+| `Source` | `src/source/mod.rs` | `process(transforms, deriver, matcher, output) → Result<ProcessStats>` |
+| `Output` | `src/output/mod.rs` | `key(source, transform, derived)`, `hit(source, transform, derived, match_info)` |
+| `StorageBackend` | `src/storage/mod.rs` | `write_batch(&[ResultRecord])`, `flush() → Vec<PathBuf>` |
 
-- **PRNG shared logic**: Common implementations in `src/{prng}.rs`, used by both transform and analyze
-- **GPU optional**: Feature-gated, graceful CPU fallback via `supports_gpu()` + `apply_batch_gpu()`
-- **Variant configs**: `{Prng}Variant` enums + `{Prng}Config` structs for parameterization
-- **Cascade filtering**: Multi-target verification for 64-bit seed spaces (mt64, xorshift)
-- **Masked analysis**: `(full_key & mask) | (1 << (bits-1))` for puzzle solving
-- **Batch processing**: Always `&[Input]` → `&mut Vec<(String, Key)>`
-- **Progress bars**: Use `indicatif::ProgressBar` for long operations
-- **Early termination**: Use `AtomicBool` for found flag across threads
+### Key Types
 
-## ANTI-PATTERNS (THIS PROJECT)
+- `Key` = `[u8; 32]` private key
+- `Input` = multi-representation struct (`string_val`, `u64_val`, `bytes_be`, `bytes_le`)
+- `DerivedKey` = full derivation (WIF, P2PKH compressed/uncompressed, P2WPKH)
 
-- **Excessive `.unwrap()`**: 125+ instances, especially in GPU code - should use `?` operator
-- **No unsafe blocks**: Intentional, maintain memory safety
-- **No panic!()**: Prefer Result types
-- **No type suppression**: Never `as any`, `@ts-ignore` equivalent
+### Where to Add Things
 
-## TRANSFORMS
+| Task | Where | Then |
+|------|-------|------|
+| New vulnerability | `src/transform/{name}.rs` + `src/analyze/{name}.rs` | Add to both `TransformType` and `AnalyzerType` enums |
+| New PRNG variant | `src/{prng}.rs` (shared) + transform + analyze | Keep config/logic in shared module |
+| New input source | `src/source/{name}.rs` | Implement `Source`, update `SourceType` and `main.rs` |
+| New output format | `src/output/{name}.rs` | Implement `Output` trait |
+| GPU acceleration | `src/gpu/shaders/{algo}.wgsl` + `src/gpu/{algo}.rs` | Feature-gated behind `gpu` |
+| Storage backend | `src/storage/{name}.rs` | Implement `StorageBackend` trait |
+| CLI changes | `src/main.rs` | clap derive macros |
 
-| Name | Seed Size | Description |
-|------|-----------|-------------|
-| `sha256` | - | Classic brainwallet |
-| `double_sha256` | - | Bitcoin-style hash |
-| `md5` | - | Legacy weak hash |
-| `milksad` | 32-bit | MT19937 (CVE-2023-39910) |
-| `mt64` | 64-bit | MT19937-64 |
-| `lcg:{variant}:{endian}` | 31-32 bit | glibc/minstd/msvc/borland |
-| `xorshift:{variant}` | 64-bit | 64/128/128plus/xoroshiro |
-| `sha256_chain:{variant}` | 32-bit | iterated/indexed/counter |
-| `multibit` | - | MultiBit HD seed-as-entropy bug |
-| `electrum` | - | Pre-BIP39 derivation |
-| `armory` | - | Pre-BIP32 HD |
+## Code Conventions
 
-## ANALYZERS
+### Imports
 
-| Name | Method | GPU | Notes |
-|------|--------|-----|-------|
-| `milksad` | 2^32 brute-force | Yes | Supports mask/cascade |
-| `mt64` | 2^64 w/ cascade | No | Requires cascade filter |
-| `lcg` | 2^31-32 brute-force | No | Multi-variant |
-| `xorshift` | 2^64 w/ cascade | No | Multi-variant |
-| `sha256_chain` | 2^32 + depth | Yes | Iterated/indexed |
-| `multibit-hd` | Mnemonic test | No | Dictionary attack support |
-| `direct` | Pattern detect | No | ASCII, small seeds |
-| `heuristic` | Statistical | No | Entropy, hamming |
+Ordered: external crates → std → blank line → `super::` → blank line → `crate::`.
 
-## COMMANDS
+```rust
+use anyhow::Result;
+use rayon::prelude::*;
+use std::path::PathBuf;
 
-```bash
-# Dev
-cargo test                    # Run tests
-cargo build --release         # Build optimized
-cargo build --release --features gpu      # With GPU
-cargo build --release --features storage  # With Parquet
+use super::Source;
 
-# Benchmarks
-cargo bench                   # Run benchmarks
-
-# Release (via justfile)
-just release 0.8.0           # Bump version, changelog, tag
-
-# CI
-# - crates.yml: Publish to crates.io on tags
-# - aur.yml: Publish to AUR on tags
-# - codspeed.yml: Benchmark on push/PR
+use crate::derive::KeyDeriver;
+use crate::transform::{Input, Transform};
 ```
 
-## NOTES
+### Error Handling
 
-- **GPU feature**: Compile with `--features gpu` for WebGPU acceleration
-- **Storage feature**: Compile with `--features storage` for Parquet output
-- **Release profile**: Aggressive optimization (LTO, single codegen unit, stripped)
-- **Large files**: `src/analyze/sha256_chain.rs` (843L), `src/gpu/sha256_chain.rs` (662L) - complexity hotspots with refactoring potential
-- **Rust 2021 edition**, requires Rust 1.70+
-- **TODO**: GPU for generate/scan needs Source trait redesign (main.rs:322)
-- **Refactoring opportunity**: Extract common brute-force framework, masking utilities, cascade formatting across analyzers
+- **CLI/top-level**: `anyhow::Result<T>`, `anyhow::bail!()` for errors
+- **Domain modules**: Custom error enums (`ElectrumError`, `GpuError`, `ParseError`, `StorageError`) with `Display` + `Error` impls
+- **`.unwrap()`**: Present in ~500 call sites (especially GPU code) — pragmatic, not ideal. Prefer `?` in new code
+- **No `unsafe`**: Intentional. Maintain memory safety
+- **No `panic!()`**: Prefer `Result` types
+
+### Naming
+
+- Types/structs: `PascalCase` (`Mt64Analyzer`, `ConsoleOutput`)
+- Functions/methods: `snake_case` (`apply_batch`, `from_string`)
+- Constants: `SCREAMING_SNAKE_CASE` (`BATCH_SIZE`, `CURVE_ORDER`)
+- Files/modules: `snake_case` (`sha256_chain.rs`, `key_parser.rs`)
+- Struct suffixes by role: `{Name}Transform`, `{Name}Analyzer`, `{Name}Source`
+
+### Patterns
+
+- **Batch processing**: All transforms/sources process `&[Input]` batches via Rayon `par_chunks()`
+- **Factory enums**: `TransformType::create()`, `AnalyzerType::create()` — parse from CLI strings via `FromStr`
+- **Builder pattern**: Used for configuration (`ElectrumTransform::new().with_change()`, `ParquetBackend::new().with_compression()`)
+- **Progress bars**: `indicatif::ProgressBar` for long operations
+- **Early termination**: `AtomicBool` shared across Rayon threads
+- **Cascade filtering**: Required for 64-bit seed spaces (mt64, xorshift) — multi-target verification to avoid false positives
+- **Masked analysis**: `(full_key & ((1<<N)-1)) | (1<<(N-1))` for puzzle solving
+- **GPU feature gating**: `#[cfg(feature = "gpu")]` on trait methods with CPU fallback as default impl
+
+### Tests
+
+Inline `#[cfg(test)] mod tests` at end of each file. Standard `assert!`/`assert_eq!`. `tempfile` crate for file I/O tests.
+
+```bash
+cargo test transform::mt64::tests::test_transform_generates_key -- --exact
+```
+
+## Feature Flags
+
+| Flag | What it gates |
+|------|---------------|
+| `gpu` | WebGPU acceleration (wgpu, pollster, bytemuck) |
+| `storage` | Parquet/Arrow output |
+| `storage-query` | DuckDB SQL queries on Parquet results (implies `storage`) |
+| `storage-cloud` | S3/R2/MinIO upload (implies `storage`) |
+| `storage-iceberg` | Iceberg catalog (implies `storage-cloud`) |
+| `boha` | Bitcoin puzzle data provider |
+
+No features enabled by default.
+
+## CI
+
+- **crates.yml**: Publish to crates.io on `v*` tags
+- **aur.yml**: Publish to AUR on `v*` tags
+- **codspeed.yml**: Criterion benchmarks on push to `main` and PRs
+
+No CI-enforced clippy or rustfmt checks.
+
+## Commit Style
+
+Semantic commits: `type(scope): description`
+
+```
+fix(output): escape compact CSV fields in console output
+test(output): harden CSV edge-case coverage
+fix(source): validate descending ranges and guard timestamp counters
+```
+
+## Execution Workflow
+
+1. **Explore** — read relevant code before changing it. Understand the trait, the factory enum, existing implementations
+2. **Plan** — identify which files need changes. New vulnerability = transform + analyze + shared PRNG + both factory enums + CLI
+3. **Edit** — make focused changes. Don't refactor surrounding code
+4. **Verify** — run `cargo test` after changes. Run `cargo build --release` if touching feature-gated code. Run specific module tests for targeted verification
+
+## Safety
+
+- Don't commit unless explicitly asked
+- Don't push unless explicitly asked
+- No secrets in outputs — this tool handles private keys, treat test vectors carefully
+- Avoid destructive git operations (force push, reset --hard) unless explicitly requested
+- Release profile uses `panic = "abort"` — unrecoverable panics kill the process, so prefer `Result` types
+
+## Complexity Hotspots
+
+| File | Lines | Why |
+|------|-------|-----|
+| `src/analyze/sha256_chain.rs` | ~843 | Multiple chain variants, GPU support, cascade filtering |
+| `src/gpu/sha256_chain.rs` | ~662 | Hybrid CPU-GPU pipeline, cascade |
+| `src/analyze/milksad.rs` | ~581 | Full 2^32 brute-force with GPU path |
+| `src/analyze/xorshift.rs` | ~511 | Multiple PRNG variants with cascade |
+| `src/gpu/hash.rs` | ~538 | Multi-algorithm GPU hashing |
+
+Refactoring potential: common brute-force framework, shared masking utilities, generic cascade formatting across analyzers.
