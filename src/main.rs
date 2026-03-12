@@ -395,7 +395,7 @@ fn main() -> Result<()> {
             storage_args,
             bitimage_args,
         } => {
-            let network = parse_network(&network);
+            let network = parse_network(&network)?;
             let transform = apply_bitimage_config(transform, &bitimage_args);
             run_generate(source, transform, network, output, verbose, &storage_args)
         }
@@ -409,7 +409,7 @@ fn main() -> Result<()> {
             storage_args,
             bitimage_args,
         } => {
-            let network = parse_network(&network);
+            let network = parse_network(&network)?;
             let transform = apply_bitimage_config(transform, &bitimage_args);
             run_scan(source, transform, network, targets, output, &storage_args)
         }
@@ -735,7 +735,7 @@ fn run_scan(
 fn run_single(passphrase: &str, transform_type: TransformType, network: &str) -> Result<()> {
     use vuke::transform::Input;
 
-    let net = parse_network(network);
+    let net = parse_network(network)?;
     let deriver = KeyDeriver::with_network(net);
     let transform = transform_type.create();
 
