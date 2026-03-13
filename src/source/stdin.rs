@@ -3,6 +3,7 @@
 use anyhow::Result;
 use std::io::{self, BufRead};
 
+
 use super::{ProcessStats, Source};
 use crate::derive::KeyDeriver;
 use crate::matcher::Matcher;
@@ -56,7 +57,7 @@ impl Source for StdinSource {
             // Process in batches
             if batch.len() >= 1000 {
                 let (keys, found) =
-                    process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer);
+                    process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer)?;
                 keys_generated += keys;
                 matches_found += found;
                 batch.clear();
@@ -66,7 +67,7 @@ impl Source for StdinSource {
         // Process remaining
         if !batch.is_empty() {
             let (keys, found) =
-                process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer);
+                process_batch(&batch, transforms, &deriver, matcher, output, &mut buffer)?;
             keys_generated += keys;
             matches_found += found;
         }
@@ -86,7 +87,7 @@ fn process_batch(
     matcher: Option<&Matcher>,
     output: &dyn Output,
     buffer: &mut Vec<(String, [u8; 32])>,
-) -> (u64, u64) {
+) -> Result<(u64, u64)> {
     let mut keys_generated = 0u64;
     let mut matches_found = 0u64;
 
@@ -99,18 +100,16 @@ fn process_batch(
 
             if let Some(m) = matcher {
                 if let Some(match_info) = m.check(&derived) {
-                    output
-                        .hit(source, transform.name(), &derived, &match_info)
-                        .ok();
+                    output.hit(source, transform.name(), &derived, &match_info)?;
                     matches_found += 1;
                 }
             } else {
-                output.key(source, transform.name(), &derived).ok();
+                output.key(source, transform.name(), &derived)?;
             }
 
             keys_generated += 1;
         }
     }
 
-    (keys_generated, matches_found)
+    Ok((keys_generated, matches_found))
 }

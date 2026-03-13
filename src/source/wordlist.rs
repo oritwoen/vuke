@@ -9,7 +9,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Seek};
 use std::path::{Path, PathBuf};
 
-use super::{ProcessStats, Source};
+use super::{OutputGuard, ProcessStats, Source};
 use crate::derive::KeyDeriver;
 use crate::matcher::Matcher;
 use crate::output::Output;
@@ -51,6 +51,7 @@ impl Source for WordlistSource {
 
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
+        let guard = OutputGuard::new();
         let mut inputs_processed = 0u64;
         let mut bytes_consumed = 0u64;
 
@@ -86,19 +87,23 @@ impl Source for WordlistSource {
 
             if chunk.len() >= CHUNK_SIZE {
                 process_chunk(
-                    &chunk, transforms, deriver, matcher, output, &stats, &matches,
+                    &chunk, transforms, deriver, matcher, output, &guard, &stats, &matches,
                 );
                 chunk.clear();
+                if guard.is_poisoned() {
+                    break;
+                }
             }
         }
 
-        if !chunk.is_empty() {
+        if !chunk.is_empty() && !guard.is_poisoned() {
             process_chunk(
-                &chunk, transforms, deriver, matcher, output, &stats, &matches,
+                &chunk, transforms, deriver, matcher, output, &guard, &stats, &matches,
             );
         }
 
         pb.finish_and_clear();
+        guard.into_result()?;
 
         Ok(ProcessStats {
             inputs_processed,
@@ -114,10 +119,15 @@ fn process_chunk(
     deriver: &KeyDeriver,
     matcher: Option<&Matcher>,
     output: &dyn Output,
+    guard: &OutputGuard,
     stats: &std::sync::atomic::AtomicU64,
     matches: &std::sync::atomic::AtomicU64,
 ) {
     lines.par_chunks(BATCH_SIZE).for_each(|batch| {
+        if guard.is_poisoned() {
+            return;
+        }
+
         let inputs: Vec<Input> = batch
             .iter()
             .map(|s| Input::from_string(s.clone()))
@@ -133,13 +143,16 @@ fn process_chunk(
 
                 if let Some(m) = matcher {
                     if let Some(match_info) = m.check(&derived) {
-                        output
-                            .hit(source, transform.name(), &derived, &match_info)
-                            .ok();
+                        guard.check(output.hit(
+                            source,
+                            transform.name(),
+                            &derived,
+                            &match_info,
+                        ));
                         matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
                 } else {
-                    output.key(source, transform.name(), &derived).ok();
+                    guard.check(output.key(source, transform.name(), &derived));
                 }
 
                 stats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

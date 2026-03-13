@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::{ProcessStats, Source};
+use super::{OutputGuard, ProcessStats, Source};
 use crate::derive::KeyDeriver;
 use crate::matcher::Matcher;
 use crate::output::Output;
@@ -103,8 +103,13 @@ impl Source for FilesSource {
         let processed = std::sync::atomic::AtomicU64::new(0);
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
+        let guard = OutputGuard::new();
 
         self.files.par_iter().for_each(|path| {
+            if guard.is_poisoned() {
+                return;
+            }
+
             let contents = match read_file_contents(path) {
                 Ok(c) => c,
                 Err(e) => {
@@ -129,13 +134,16 @@ impl Source for FilesSource {
 
                     if let Some(m) = matcher {
                         if let Some(match_info) = m.check(&derived) {
-                            output
-                                .hit(source, transform.name(), &derived, &match_info)
-                                .ok();
+                            guard.check(output.hit(
+                                source,
+                                transform.name(),
+                                &derived,
+                                &match_info,
+                            ));
                             matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     } else {
-                        output.key(source, transform.name(), &derived).ok();
+                        guard.check(output.key(source, transform.name(), &derived));
                     }
 
                     stats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -146,6 +154,7 @@ impl Source for FilesSource {
         });
 
         pb.finish_and_clear();
+        guard.into_result()?;
 
         Ok(ProcessStats {
             inputs_processed: processed.load(std::sync::atomic::Ordering::Relaxed),
