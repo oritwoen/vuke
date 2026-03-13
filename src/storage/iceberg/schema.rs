@@ -116,12 +116,6 @@ pub fn build_iceberg_schema() -> Result<IcebergSchema> {
         .into(),
         NestedField::optional(
             next_id(),
-            fields::ADDRESS_P2TR,
-            Type::Primitive(PrimitiveType::String),
-        )
-        .into(),
-        NestedField::optional(
-            next_id(),
             fields::WIF_COMPRESSED,
             Type::Primitive(PrimitiveType::String),
         )
@@ -129,6 +123,13 @@ pub fn build_iceberg_schema() -> Result<IcebergSchema> {
         NestedField::optional(
             next_id(),
             fields::WIF_UNCOMPRESSED,
+            Type::Primitive(PrimitiveType::String),
+        )
+        .into(),
+        // Appended after WIF fields to preserve existing field IDs
+        NestedField::optional(
+            next_id(),
+            fields::ADDRESS_P2TR,
             Type::Primitive(PrimitiveType::String),
         )
         .into(),
