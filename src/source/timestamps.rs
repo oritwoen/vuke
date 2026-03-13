@@ -226,6 +226,10 @@ fn process_timestamp(
     let mut buffer = Vec::with_capacity(6);
 
     for transform in transforms {
+        if guard.is_poisoned() {
+            break;
+        }
+
         buffer.clear();
         transform.apply_batch(&inputs, &mut buffer);
 

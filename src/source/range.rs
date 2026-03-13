@@ -68,6 +68,10 @@ impl Source for RangeSource {
             let mut buffer = Vec::with_capacity(inputs.len() * 3);
 
             for transform in transforms {
+                if guard.is_poisoned() {
+                    break;
+                }
+
                 buffer.clear();
                 transform.apply_batch(&inputs, &mut buffer);
 
