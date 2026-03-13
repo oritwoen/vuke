@@ -74,9 +74,10 @@ impl OutputGuard {
         if let Err(e) = result {
             self.poisoned
                 .store(true, std::sync::atomic::Ordering::Relaxed);
-            let mut first = self.first_error.lock().unwrap();
-            if first.is_none() {
-                *first = Some(e.to_string());
+            if let Ok(mut first) = self.first_error.lock() {
+                if first.is_none() {
+                    *first = Some(e.to_string());
+                }
             }
         }
     }
@@ -86,7 +87,7 @@ impl OutputGuard {
             let msg = self
                 .first_error
                 .into_inner()
-                .unwrap()
+                .unwrap_or_else(|e| e.into_inner())
                 .unwrap_or_else(|| "unknown output error".to_string());
             anyhow::bail!("Output failed: {}", msg)
         } else {

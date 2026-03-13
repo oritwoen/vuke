@@ -72,6 +72,10 @@ impl Source for RangeSource {
                 transform.apply_batch(&inputs, &mut buffer);
 
                 for (source, key) in &buffer {
+                    if guard.is_poisoned() {
+                        break;
+                    }
+
                     let derived = deriver.derive(key);
 
                     if let Some(m) = matcher {
