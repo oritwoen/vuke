@@ -365,7 +365,7 @@ enum SourceCommand {
         end: String,
         /// Also test milliseconds (1000x more keys)
         #[arg(long)]
-        microseconds: bool,
+        milliseconds: bool,
     },
 
     /// Read from stdin (streaming)
@@ -1149,11 +1149,11 @@ fn create_source(cmd: SourceCommand) -> Result<Box<dyn Source>> {
         SourceCommand::Timestamps {
             start,
             end,
-            microseconds,
+            milliseconds,
         } => Ok(Box::new(TimestampSource::from_dates(
             &start,
             &end,
-            microseconds,
+            milliseconds,
         )?)),
         SourceCommand::Stdin => Ok(Box::new(StdinSource::new())),
         SourceCommand::Files { file, dir } => match (file, dir) {
