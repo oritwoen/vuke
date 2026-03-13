@@ -364,7 +364,7 @@ enum SourceCommand {
         #[arg(long)]
         end: String,
         /// Also test milliseconds (1000x more keys)
-        #[arg(long)]
+        #[arg(long, alias = "microseconds")]
         milliseconds: bool,
     },
 
