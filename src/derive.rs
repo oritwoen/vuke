@@ -38,15 +38,18 @@ pub struct DerivedKey {
     pub p2pkh_uncompressed: String,
     /// P2WPKH (bech32) address
     pub p2wpkh: String,
+    /// P2TR (Taproot bech32m) address
+    pub p2tr: String,
 }
 
 impl DerivedKey {
     /// Get all addresses as slice for matching.
-    pub fn addresses(&self) -> [&str; 3] {
+    pub fn addresses(&self) -> [&str; 4] {
         [
             &self.p2pkh_compressed,
             &self.p2pkh_uncompressed,
             &self.p2wpkh,
+            &self.p2tr,
         ]
     }
 }
@@ -117,6 +120,10 @@ impl KeyDeriver {
             .expect("valid compressed pubkey");
         let p2wpkh = Address::p2wpkh(&compressed_pk, self.network).to_string();
 
+        // P2TR (Taproot, key-path spend with no script tree)
+        let (x_only_key, _parity) = secp_pubkey.x_only_public_key();
+        let p2tr = Address::p2tr(&self.secp, x_only_key, None, self.network).to_string();
+
         // Decimal representation (big-endian)
         let private_key_decimal = BigUint::from_bytes_be(&key_bytes).to_string();
 
@@ -161,6 +168,7 @@ impl KeyDeriver {
             p2pkh_compressed,
             p2pkh_uncompressed,
             p2wpkh,
+            p2tr,
         }
     }
 }
@@ -206,10 +214,11 @@ mod tests {
         let derived = deriver.derive(&key);
 
         let addrs = derived.addresses();
-        assert_eq!(addrs.len(), 3);
+        assert_eq!(addrs.len(), 4);
         assert!(addrs[0].starts_with('1')); // P2PKH compressed
         assert!(addrs[1].starts_with('1')); // P2PKH uncompressed
         assert!(addrs[2].starts_with("bc1q")); // P2WPKH
+        assert!(addrs[3].starts_with("bc1p")); // P2TR
     }
 
     #[test]

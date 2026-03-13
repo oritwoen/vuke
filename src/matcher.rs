@@ -23,6 +23,7 @@ pub enum AddressType {
     P2pkhCompressed,
     P2pkhUncompressed,
     P2wpkh,
+    P2tr,
 }
 
 impl AddressType {
@@ -31,6 +32,7 @@ impl AddressType {
             AddressType::P2pkhCompressed => "p2pkh_compressed",
             AddressType::P2pkhUncompressed => "p2pkh_uncompressed",
             AddressType::P2wpkh => "p2wpkh",
+            AddressType::P2tr => "p2tr",
         }
     }
 }
@@ -94,6 +96,14 @@ impl Matcher {
             });
         }
 
+        // Check P2TR (Taproot)
+        if self.targets.contains(&derived.p2tr) {
+            return Some(MatchInfo {
+                address_type: AddressType::P2tr,
+                address: derived.p2tr.clone(),
+            });
+        }
+
         None
     }
 
@@ -135,6 +145,22 @@ mod tests {
         let info = result.unwrap();
         assert!(matches!(info.address_type, AddressType::P2pkhUncompressed));
         assert_eq!(info.address, "1JwSSubhmg6iPtRjtyqhUYYH7bZg3Lfy1T");
+    }
+
+    #[test]
+    fn test_matcher_p2tr() {
+        let key = [1u8; 32];
+        let deriver = KeyDeriver::new();
+        let derived = deriver.derive(&key);
+
+        let matcher = Matcher::from_addresses(vec![derived.p2tr.clone()]);
+
+        let result = matcher.check(&derived);
+        assert!(result.is_some());
+
+        let info = result.unwrap();
+        assert!(matches!(info.address_type, AddressType::P2tr));
+        assert!(info.address.starts_with("bc1p"));
     }
 
     #[test]

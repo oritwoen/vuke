@@ -72,6 +72,7 @@ impl Output for ConsoleOutput {
             writeln!(w, "p2pkh_compressed: {}", derived.p2pkh_compressed)?;
             writeln!(w, "p2pkh_uncompressed: {}", derived.p2pkh_uncompressed)?;
             writeln!(w, "p2wpkh: {}", derived.p2wpkh)?;
+            writeln!(w, "p2tr: {}", derived.p2tr)?;
         } else {
             // Compact format: source,transform,privkey,address_compressed
             writeln!(
@@ -115,6 +116,7 @@ impl Output for ConsoleOutput {
         writeln!(w, "P2PKH (compressed): {}", derived.p2pkh_compressed)?;
         writeln!(w, "P2PKH (uncompressed): {}", derived.p2pkh_uncompressed)?;
         writeln!(w, "P2WPKH: {}", derived.p2wpkh)?;
+        writeln!(w, "P2TR: {}", derived.p2tr)?;
         writeln!(w, "=========================")?;
 
         Ok(())
@@ -165,6 +167,7 @@ mod tests {
             p2pkh_compressed: "1Address".to_string(),
             p2pkh_uncompressed: "1Uncompressed".to_string(),
             p2wpkh: "bc1q...".to_string(),
+            p2tr: "bc1p...".to_string(),
         }
     }
 

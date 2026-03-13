@@ -92,6 +92,7 @@ mod tests {
             p2pkh_compressed: "1ABC".to_string(),
             p2pkh_uncompressed: "1DEF".to_string(),
             p2wpkh: "bc1q".to_string(),
+            p2tr: "bc1p".to_string(),
         }
     }
 
