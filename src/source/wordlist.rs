@@ -67,12 +67,14 @@ impl Source for WordlistSource {
                 Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
                     // read_line() already consumed the bytes, sync position from reader
                     bytes_consumed = reader.stream_position().unwrap_or(bytes_consumed);
+                    pb.set_position(bytes_consumed);
                     continue;
                 }
                 Err(e) => return Err(e.into()),
             };
 
             bytes_consumed += bytes_read;
+            pb.set_position(bytes_consumed);
 
             let trimmed = line_buf.trim().to_string();
             if trimmed.is_empty() {
@@ -86,7 +88,6 @@ impl Source for WordlistSource {
                 process_chunk(
                     &chunk, transforms, deriver, matcher, output, &stats, &matches,
                 );
-                pb.set_position(bytes_consumed);
                 chunk.clear();
             }
         }
@@ -95,7 +96,6 @@ impl Source for WordlistSource {
             process_chunk(
                 &chunk, transforms, deriver, matcher, output, &stats, &matches,
             );
-            pb.set_position(bytes_consumed);
         }
 
         pb.finish_and_clear();
