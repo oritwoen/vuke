@@ -6,7 +6,7 @@ use anyhow::Result;
 use indicatif::ProgressBar;
 use rayon::prelude::*;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek};
 use std::path::{Path, PathBuf};
 
 use super::{ProcessStats, Source};
@@ -15,7 +15,7 @@ use crate::matcher::Matcher;
 use crate::output::Output;
 use crate::transform::{Input, Transform};
 
-const CHUNK_SIZE: usize = 10_000;
+const CHUNK_SIZE: usize = 100_000;
 const BATCH_SIZE: usize = 1000;
 
 /// Generate keys from a wordlist file
@@ -65,8 +65,8 @@ impl Source for WordlistSource {
                 Ok(0) => break,
                 Ok(n) => n as u64,
                 Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                    // Skip invalid UTF-8 lines; estimate 1 byte consumed to keep progress moving
-                    bytes_consumed += 1;
+                    // read_line() already consumed the bytes, sync position from reader
+                    bytes_consumed = reader.stream_position().unwrap_or(bytes_consumed);
                     continue;
                 }
                 Err(e) => return Err(e.into()),
@@ -95,6 +95,7 @@ impl Source for WordlistSource {
             process_chunk(
                 &chunk, transforms, deriver, matcher, output, &stats, &matches,
             );
+            pb.set_position(bytes_consumed);
         }
 
         pb.finish_and_clear();
