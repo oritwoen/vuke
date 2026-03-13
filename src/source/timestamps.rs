@@ -15,11 +15,11 @@ use crate::transform::{Input, Transform};
 pub struct TimestampSource {
     start: u64,
     end: u64,
-    microseconds: bool,
+    milliseconds: bool,
 }
 
 impl TimestampSource {
-    pub fn from_dates(start_date: &str, end_date: &str, microseconds: bool) -> Result<Self> {
+    pub fn from_dates(start_date: &str, end_date: &str, milliseconds: bool) -> Result<Self> {
         let start = NaiveDate::parse_from_str(start_date, "%Y-%m-%d")?
             .and_hms_opt(0, 0, 0)
             .unwrap()
@@ -50,7 +50,7 @@ impl TimestampSource {
         Ok(Self {
             start,
             end,
-            microseconds,
+            milliseconds,
         })
     }
 }
@@ -71,9 +71,9 @@ impl Source for TimestampSource {
             );
         }
 
-        if self.microseconds && self.end > (u64::MAX - 999) / 1000 {
+        if self.milliseconds && self.end > (u64::MAX - 999) / 1000 {
             anyhow::bail!(
-                "Timestamp value overflow in microseconds mode for end timestamp {}",
+                "Timestamp value overflow in milliseconds mode for end timestamp {}",
                 self.end
             );
         }
@@ -89,10 +89,10 @@ impl Source for TimestampSource {
                     self.end
                 )
             })?;
-        let total = if self.microseconds {
+        let total = if self.milliseconds {
             count.checked_mul(1001).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Timestamp workload overflow in microseconds mode for {} inputs",
+                    "Timestamp workload overflow in milliseconds mode for {} inputs",
                     count
                 )
             })?
@@ -110,8 +110,8 @@ impl Source for TimestampSource {
             // Process base timestamp
             process_timestamp(ts, transforms, &deriver, matcher, output, &stats, &matches);
 
-            // Process microseconds if enabled
-            if self.microseconds {
+            // Process milliseconds if enabled
+            if self.milliseconds {
                 for ms in 0u64..1000 {
                     let ts_ms = ts * 1000 + ms;
                     process_timestamp(
@@ -153,11 +153,11 @@ mod tests {
     }
 
     #[test]
-    fn process_counts_microseconds_mode_correctly() {
+    fn process_counts_milliseconds_mode_correctly() {
         let source = TimestampSource {
             start: 1,
             end: 1,
-            microseconds: true,
+            milliseconds: true,
         };
         let deriver = KeyDeriver::new();
         let output = ConsoleOutput::new();
@@ -175,7 +175,7 @@ mod tests {
         let source = TimestampSource {
             start: 10,
             end: 1,
-            microseconds: false,
+            milliseconds: false,
         };
         let deriver = KeyDeriver::new();
         let output = ConsoleOutput::new();
@@ -190,7 +190,7 @@ mod tests {
         let source = TimestampSource {
             start: 0,
             end: u64::MAX,
-            microseconds: false,
+            milliseconds: false,
         };
         let deriver = KeyDeriver::new();
         let output = ConsoleOutput::new();
