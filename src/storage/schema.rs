@@ -40,6 +40,7 @@ pub mod fields {
     pub const ADDRESS_P2PKH_COMPRESSED: &str = "address_p2pkh_compressed";
     pub const ADDRESS_P2PKH_UNCOMPRESSED: &str = "address_p2pkh_uncompressed";
     pub const ADDRESS_P2WPKH: &str = "address_p2wpkh";
+    pub const ADDRESS_P2TR: &str = "address_p2tr";
 
     // Export formats
     pub const WIF_COMPRESSED: &str = "wif_compressed";
@@ -52,7 +53,7 @@ pub mod fields {
 /// Variable-length fields (public_keys, addresses, export_formats) are mapped
 /// to fixed columns based on known Bitcoin formats.
 ///
-/// # Schema (19 columns)
+/// # Schema (20 columns)
 ///
 /// | Column | Type | Nullable | Description |
 /// |--------|------|----------|-------------|
@@ -73,6 +74,7 @@ pub mod fields {
 /// | address_p2pkh_compressed | Utf8 | Yes | P2PKH (compressed) |
 /// | address_p2pkh_uncompressed | Utf8 | Yes | P2PKH (uncompressed) |
 /// | address_p2wpkh | Utf8 | Yes | P2WPKH (native segwit) |
+/// | address_p2tr | Utf8 | Yes | P2TR (Taproot) |
 /// | wif_compressed | Utf8 | Yes | WIF compressed |
 /// | wif_uncompressed | Utf8 | Yes | WIF uncompressed |
 pub fn result_schema() -> Schema {
@@ -106,6 +108,7 @@ pub fn result_schema() -> Schema {
         Field::new(fields::ADDRESS_P2PKH_COMPRESSED, DataType::Utf8, true),
         Field::new(fields::ADDRESS_P2PKH_UNCOMPRESSED, DataType::Utf8, true),
         Field::new(fields::ADDRESS_P2WPKH, DataType::Utf8, true),
+        Field::new(fields::ADDRESS_P2TR, DataType::Utf8, true),
         // Export formats (nullable)
         Field::new(fields::WIF_COMPRESSED, DataType::Utf8, true),
         Field::new(fields::WIF_UNCOMPRESSED, DataType::Utf8, true),
@@ -232,6 +235,12 @@ pub fn records_to_batch(records: &[ResultRecord<'_>]) -> Result<RecordBatch, Arr
             .map(|r| find_address(r.addresses, "p2wpkh"))
             .collect::<Vec<_>>(),
     ));
+    let address_p2tr_array: ArrayRef = Arc::new(StringArray::from(
+        records
+            .iter()
+            .map(|r| find_address(r.addresses, "p2tr"))
+            .collect::<Vec<_>>(),
+    ));
 
     // Export format arrays (nullable)
     let wif_compressed_array: ArrayRef = Arc::new(StringArray::from(
@@ -267,6 +276,7 @@ pub fn records_to_batch(records: &[ResultRecord<'_>]) -> Result<RecordBatch, Arr
             address_p2pkh_compressed_array,
             address_p2pkh_uncompressed_array,
             address_p2wpkh_array,
+            address_p2tr_array,
             wif_compressed_array,
             wif_uncompressed_array,
         ],
@@ -281,9 +291,9 @@ mod tests {
     use arrow::datatypes::DataType;
 
     #[test]
-    fn schema_has_19_fields() {
+    fn schema_has_20_fields() {
         let schema = result_schema();
-        assert_eq!(schema.fields().len(), 19);
+        assert_eq!(schema.fields().len(), 20);
     }
 
     #[test]
@@ -311,6 +321,7 @@ mod tests {
                 "address_p2pkh_compressed",
                 "address_p2pkh_uncompressed",
                 "address_p2wpkh",
+                "address_p2tr",
                 "wif_compressed",
                 "wif_uncompressed",
             ]
@@ -337,7 +348,7 @@ mod tests {
         assert_eq!(schema.field(10).data_type(), &DataType::UInt16);
         assert_eq!(schema.field(11).data_type(), &DataType::UInt8);
 
-        for i in 12..19 {
+        for i in 12..20 {
             assert_eq!(schema.field(i).data_type(), &DataType::Utf8);
         }
     }
@@ -355,7 +366,7 @@ mod tests {
             );
         }
 
-        let nullable = [4, 12, 13, 14, 15, 16, 17, 18];
+        let nullable = [4, 12, 13, 14, 15, 16, 17, 18, 19];
         for i in nullable {
             assert!(
                 schema.field(i).is_nullable(),
@@ -369,7 +380,7 @@ mod tests {
     fn records_to_batch_empty() {
         let batch = records_to_batch(&[]).unwrap();
         assert_eq!(batch.num_rows(), 0);
-        assert_eq!(batch.num_columns(), 19);
+        assert_eq!(batch.num_columns(), 20);
         assert_eq!(batch.schema(), Arc::new(result_schema()));
     }
 
@@ -449,7 +460,7 @@ mod tests {
         let batch = records_to_batch(&[record]).unwrap();
 
         assert_eq!(batch.num_rows(), 1);
-        assert_eq!(batch.num_columns(), 19);
+        assert_eq!(batch.num_columns(), 20);
 
         let source_col = batch
             .column(0)
@@ -501,7 +512,7 @@ mod tests {
         assert_eq!(addr_p2wpkh_col.value(0), "bc1qtest");
 
         let wif_compressed_col = batch
-            .column(17)
+            .column(18)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
@@ -558,7 +569,7 @@ mod tests {
         assert!(addr_p2pkh.is_null(0));
 
         let wif = batch
-            .column(17)
+            .column(18)
             .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();

@@ -337,7 +337,7 @@ mod tests {
     fn schema_returns_result_schema() {
         let backend = ParquetBackend::new("results", "sha256");
         let schema = backend.schema();
-        assert_eq!(schema.fields().len(), 19);
+        assert_eq!(schema.fields().len(), 20);
         assert_eq!(schema.field(0).name(), "source");
     }
 
@@ -581,7 +581,7 @@ mod tests {
 
         let batch = &batches[0];
         assert_eq!(batch.num_rows(), 2);
-        assert_eq!(batch.num_columns(), 19);
+        assert_eq!(batch.num_columns(), 20);
 
         let source_col = batch
             .column(0)

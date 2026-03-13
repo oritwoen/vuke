@@ -116,6 +116,12 @@ pub fn build_iceberg_schema() -> Result<IcebergSchema> {
         .into(),
         NestedField::optional(
             next_id(),
+            fields::ADDRESS_P2TR,
+            Type::Primitive(PrimitiveType::String),
+        )
+        .into(),
+        NestedField::optional(
+            next_id(),
             fields::WIF_COMPRESSED,
             Type::Primitive(PrimitiveType::String),
         )
@@ -150,7 +156,7 @@ mod tests {
     #[test]
     fn build_schema_succeeds() {
         let schema = build_iceberg_schema().unwrap();
-        assert_eq!(schema.as_struct().fields().len(), 19);
+        assert_eq!(schema.as_struct().fields().len(), 20);
     }
 
     #[test]
