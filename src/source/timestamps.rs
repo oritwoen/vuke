@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use indicatif::ProgressBar;
 use rayon::prelude::*;
 
-use super::{ProcessStats, Source};
+use super::{OutputGuard, ProcessStats, Source};
 use crate::derive::KeyDeriver;
 use crate::matcher::Matcher;
 use crate::output::Output;
@@ -105,17 +105,27 @@ impl Source for TimestampSource {
 
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
+        let guard = OutputGuard::new();
 
         (self.start..=self.end).into_par_iter().for_each(|ts| {
+            if guard.is_poisoned() {
+                return;
+            }
+
             // Process base timestamp
-            process_timestamp(ts, transforms, &deriver, matcher, output, &stats, &matches);
+            process_timestamp(
+                ts, transforms, &deriver, matcher, output, &guard, &stats, &matches,
+            );
 
             // Process milliseconds if enabled
             if self.milliseconds {
                 for ms in 0u64..1000 {
+                    if guard.is_poisoned() {
+                        return;
+                    }
                     let ts_ms = ts * 1000 + ms;
                     process_timestamp(
-                        ts_ms, transforms, &deriver, matcher, output, &stats, &matches,
+                        ts_ms, transforms, &deriver, matcher, output, &guard, &stats, &matches,
                     );
                 }
                 pb.inc(1001);
@@ -125,6 +135,7 @@ impl Source for TimestampSource {
         });
 
         pb.finish_and_clear();
+        guard.into_result()?;
 
         Ok(ProcessStats {
             inputs_processed: total,
@@ -207,6 +218,7 @@ fn process_timestamp(
     deriver: &KeyDeriver,
     matcher: Option<&Matcher>,
     output: &dyn Output,
+    guard: &OutputGuard,
     stats: &std::sync::atomic::AtomicU64,
     matches: &std::sync::atomic::AtomicU64,
 ) {
@@ -214,21 +226,27 @@ fn process_timestamp(
     let mut buffer = Vec::with_capacity(6);
 
     for transform in transforms {
+        if guard.is_poisoned() {
+            break;
+        }
+
         buffer.clear();
         transform.apply_batch(&inputs, &mut buffer);
 
         for (source, key) in &buffer {
+            if guard.is_poisoned() {
+                break;
+            }
+
             let derived = deriver.derive(key);
 
             if let Some(m) = matcher {
                 if let Some(match_info) = m.check(&derived) {
-                    output
-                        .hit(source, transform.name(), &derived, &match_info)
-                        .ok();
+                    guard.check(output.hit(source, transform.name(), &derived, &match_info));
                     matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             } else {
-                output.key(source, transform.name(), &derived).ok();
+                guard.check(output.key(source, transform.name(), &derived));
             }
 
             stats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

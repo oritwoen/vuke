@@ -4,7 +4,7 @@ use anyhow::Result;
 use indicatif::ProgressBar;
 use rayon::prelude::*;
 
-use super::{ProcessStats, Source};
+use super::{OutputGuard, ProcessStats, Source};
 use crate::derive::KeyDeriver;
 use crate::matcher::Matcher;
 use crate::output::Output;
@@ -52,10 +52,15 @@ impl Source for RangeSource {
 
         let stats = std::sync::atomic::AtomicU64::new(0);
         let matches = std::sync::atomic::AtomicU64::new(0);
+        let guard = OutputGuard::new();
 
         let num_batches = count / BATCH_SIZE + u64::from(count % BATCH_SIZE != 0);
 
         (0..num_batches).into_par_iter().for_each(|batch_idx| {
+            if guard.is_poisoned() {
+                return;
+            }
+
             let batch_start = self.start + batch_idx * BATCH_SIZE;
             let batch_end = batch_start.saturating_add(BATCH_SIZE - 1).min(self.end);
 
@@ -63,21 +68,32 @@ impl Source for RangeSource {
             let mut buffer = Vec::with_capacity(inputs.len() * 3);
 
             for transform in transforms {
+                if guard.is_poisoned() {
+                    break;
+                }
+
                 buffer.clear();
                 transform.apply_batch(&inputs, &mut buffer);
 
                 for (source, key) in &buffer {
+                    if guard.is_poisoned() {
+                        break;
+                    }
+
                     let derived = deriver.derive(key);
 
                     if let Some(m) = matcher {
                         if let Some(match_info) = m.check(&derived) {
-                            output
-                                .hit(source, transform.name(), &derived, &match_info)
-                                .ok();
+                            guard.check(output.hit(
+                                source,
+                                transform.name(),
+                                &derived,
+                                &match_info,
+                            ));
                             matches.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         }
                     } else {
-                        output.key(source, transform.name(), &derived).ok();
+                        guard.check(output.key(source, transform.name(), &derived));
                     }
 
                     stats.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -88,6 +104,7 @@ impl Source for RangeSource {
         });
 
         pb.finish_and_clear();
+        guard.into_result()?;
 
         Ok(ProcessStats {
             inputs_processed: count,
@@ -101,7 +118,44 @@ impl Source for RangeSource {
 mod tests {
     use super::*;
     use crate::derive::KeyDeriver;
-    use crate::output::ConsoleOutput;
+    use crate::matcher::MatchInfo;
+    use crate::output::{ConsoleOutput, Output};
+    use crate::transform::TransformType;
+
+    struct FailingOutput;
+
+    impl Output for FailingOutput {
+        fn key(&self, _: &str, _: &str, _: &crate::derive::DerivedKey) -> anyhow::Result<()> {
+            anyhow::bail!("broken pipe")
+        }
+        fn hit(
+            &self,
+            _: &str,
+            _: &str,
+            _: &crate::derive::DerivedKey,
+            _: &MatchInfo,
+        ) -> anyhow::Result<()> {
+            anyhow::bail!("broken pipe")
+        }
+        fn flush(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn process_propagates_output_error() {
+        let source = RangeSource::new(1, 10);
+        let deriver = KeyDeriver::new();
+        let output = FailingOutput;
+        let transforms: Vec<Box<dyn Transform>> = vec![TransformType::Sha256.create()];
+
+        let result = source.process(&transforms, &deriver, None, &output);
+        assert!(result.is_err());
+        assert!(
+            result.unwrap_err().to_string().contains("broken pipe"),
+            "error message should contain the original output error"
+        );
+    }
 
     #[test]
     fn process_rejects_descending_range() {
