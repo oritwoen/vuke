@@ -1,24 +1,24 @@
+use std::fmt::Write;
+
 use super::{AnalysisResult, KeyMetadata};
 
 pub fn format_results(metadata: &KeyMetadata, results: &[AnalysisResult]) -> String {
     let mut output = String::new();
 
-    output.push_str(&format!("Private Key: {}\n", metadata.hex));
-    output.push_str(&format!("Bit Length:  {}\n", metadata.bit_length));
-    output.push_str(&format!("Hamming Weight: {}\n", metadata.hamming_weight));
+    let _ = writeln!(output, "Private Key: {}", metadata.hex);
+    let _ = writeln!(output, "Bit Length:  {}", metadata.bit_length);
+    let _ = writeln!(output, "Hamming Weight: {}", metadata.hamming_weight);
     output.push_str("---\n");
     output.push_str("Analysis:\n");
 
     for result in results {
         let symbol = result.status.symbol();
         let details = result.details.as_deref().unwrap_or("");
-        output.push_str(&format!(
-            "  {} {}: {} {}\n",
-            symbol,
-            result.analyzer,
-            result.status.as_str().to_uppercase(),
-            if details.is_empty() { String::new() } else { format!("({})", details) }
-        ));
+        if details.is_empty() {
+            let _ = writeln!(output, "  {} {}: {}", symbol, result.analyzer, result.status.as_str().to_uppercase());
+        } else {
+            let _ = writeln!(output, "  {} {}: {} ({})", symbol, result.analyzer, result.status.as_str().to_uppercase(), details);
+        }
     }
 
     output
@@ -68,7 +68,7 @@ fn escape_json(s: &str) -> String {
             '\r' => result.push_str("\\r"),
             '\t' => result.push_str("\\t"),
             c if c.is_control() => {
-                result.push_str(&format!("\\u{:04x}", c as u32));
+                let _ = write!(result, "\\u{:04x}", c as u32);
             }
             c => result.push(c),
         }
