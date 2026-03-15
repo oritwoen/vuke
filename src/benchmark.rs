@@ -54,8 +54,8 @@ pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
 
     if json {
         println!(
-            "{{ \"name\": \"{:?}\", \"ops_per_sec\": {}, \"total_ops\": {}, \"duration_secs\": {} }}",
-            transform_type, speed as u64, count, duration
+            "{{ \"name\": \"{}\", \"ops_per_sec\": {}, \"total_ops\": {}, \"duration_secs\": {} }}",
+            transform.name(), speed as u64, count, duration
         );
     } else {
         println!("------------------------------------------------");
