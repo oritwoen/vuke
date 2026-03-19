@@ -28,6 +28,7 @@ hex = "0.4"
 chrono = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1.0"
 
 # Crypto
 sha2 = "0.10"
