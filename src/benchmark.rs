@@ -3,7 +3,6 @@
 use anyhow::Result;
 use rayon::prelude::*;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
@@ -23,7 +22,7 @@ fn benchmark_name(transform_type: &TransformType) -> String {
             if *for_change {
                 "electrum:change".to_string()
             } else {
-                "electrum:receive".to_string()
+                "electrum".to_string()
             }
         }
         TransformType::Lcg { variant, endian } => {
@@ -42,26 +41,17 @@ fn benchmark_name(transform_type: &TransformType) -> String {
             format!("sha256_chain:{}:depth={}", variant_name, chain_depth)
         }
         TransformType::Bitimage {
-            path,
             passphrase,
             passphrase_wordlist,
             derive_count,
+            ..
         } => format!(
-            "bitimage:path={}:passphrase={}:wordlist={}:derive_count={}",
-            fingerprint(path),
-            fingerprint(passphrase),
-            passphrase_wordlist
-                .as_ref()
-                .map(|path| fingerprint(&path.display().to_string()))
-                .unwrap_or_else(|| "none".to_string()),
+            "bitimage:passphrase_present={}:wordlist_present={}:derive_count={}",
+            !passphrase.is_empty(),
+            passphrase_wordlist.is_some(),
             derive_count
         ),
     }
-}
-
-fn fingerprint(value: &str) -> String {
-    let digest = Sha256::digest(value.as_bytes());
-    hex::encode(&digest[..6])
 }
 
 fn format_benchmark_json(
@@ -143,26 +133,40 @@ pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+
     use super::{benchmark_name, format_benchmark_json};
 
     use crate::lcg::{LcgEndian, GLIBC};
     use crate::transform::TransformType;
 
     #[test]
-    fn benchmark_json_keeps_parameterized_transform_details() {
+    fn benchmark_json_keeps_parameterized_transform_details() -> Result<()> {
         let transform_type = TransformType::Lcg {
             variant: Some(GLIBC),
             endian: LcgEndian::Big,
         };
 
         let output = format_benchmark_json(&transform_type, 123, 456, 7.5);
-        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output)?;
 
         assert_eq!(parsed["name"].as_str(), Some("lcg:glibc:be"));
+        Ok(())
     }
 
     #[test]
-    fn benchmark_json_redacts_bitimage_secrets() {
+    fn benchmark_json_uses_canonical_electrum_names() {
+        let receive = TransformType::Electrum { for_change: false };
+        let change = TransformType::Electrum { for_change: true };
+
+        assert_eq!(benchmark_name(&receive), "electrum");
+        assert_eq!(benchmark_name(&change), "electrum:change");
+        assert!(benchmark_name(&receive).parse::<TransformType>().is_ok());
+        assert!(benchmark_name(&change).parse::<TransformType>().is_ok());
+    }
+
+    #[test]
+    fn benchmark_json_redacts_bitimage_secrets() -> Result<()> {
         let transform_type = TransformType::Bitimage {
             path: "C:\\keys\\\"set\"\n.txt".into(),
             passphrase: "word\"list\\seed\t".into(),
@@ -171,15 +175,18 @@ mod tests {
         };
 
         let output = format_benchmark_json(&transform_type, 1, 2, 3.0);
-        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
-
-        let name = parsed["name"].as_str().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&output)?;
+        let name = parsed["name"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing benchmark name"))?;
 
         assert_eq!(name, benchmark_name(&transform_type));
-        assert!(name.contains("bitimage:path="));
-        assert!(name.contains(":passphrase="));
-        assert!(name.contains(":wordlist=none:derive_count=2"));
+        assert_eq!(
+            name,
+            "bitimage:passphrase_present=true:wordlist_present=false:derive_count=2"
+        );
         assert!(!name.contains("word\"list\\seed\t"));
         assert!(!name.contains("C:\\keys\\\"set\"\n.txt"));
+        Ok(())
     }
 }
