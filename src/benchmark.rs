@@ -41,17 +41,23 @@ fn benchmark_name(transform_type: &TransformType) -> String {
             format!("sha256_chain:{}:depth={}", variant_name, chain_depth)
         }
         TransformType::Bitimage {
+            path,
             passphrase,
             passphrase_wordlist,
             derive_count,
             ..
         } => format!(
-            "bitimage:passphrase_present={}:wordlist_present={}:derive_count={}",
+            "bitimage:path={}:passphrase_present={}:wordlist_present={}:derive_count={}",
+            escape_label_value(path),
             !passphrase.is_empty(),
             passphrase_wordlist.is_some(),
             derive_count
         ),
     }
+}
+
+fn escape_label_value(value: &str) -> String {
+    value.chars().flat_map(char::escape_default).collect()
 }
 
 fn format_benchmark_json(
@@ -183,7 +189,7 @@ mod tests {
         assert_eq!(name, benchmark_name(&transform_type));
         assert_eq!(
             name,
-            "bitimage:passphrase_present=true:wordlist_present=false:derive_count=2"
+            "bitimage:path=C:\\\\keys\\\\\\\"set\\\"\\n.txt:passphrase_present=true:wordlist_present=false:derive_count=2"
         );
         assert!(!name.contains("word\"list\\seed\t"));
         assert!(!name.contains("C:\\keys\\\"set\"\n.txt"));
