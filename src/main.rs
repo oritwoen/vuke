@@ -243,9 +243,13 @@ enum Command {
 
     /// Run benchmark
     Bench {
-        /// Transform to benchmark (e.g., sha256, lcg:glibc)
-        #[arg(long, value_parser = parse_transform_type, default_value = "sha256")]
-        transform: TransformType,
+        /// Transform(s) to benchmark (e.g., sha256, lcg:glibc)
+        #[arg(long, value_parser = parse_transform_type, num_args = 1..)]
+        transform: Vec<TransformType>,
+
+        /// Benchmark all transforms
+        #[arg(long)]
+        all: bool,
 
         /// Output JSON for benchmark runner
         #[arg(long)]
@@ -420,7 +424,16 @@ fn main() -> Result<()> {
             network,
         } => run_single(&passphrase, transform, &network),
 
-        Command::Bench { transform, json } => vuke::benchmark::run_benchmark(transform, json),
+        Command::Bench { transform, all, json } => {
+            let transforms = if all {
+                vuke::benchmark::default_transforms()
+            } else if transform.is_empty() {
+                vec![TransformType::Sha256]
+            } else {
+                transform
+            };
+            vuke::benchmark::run_benchmark(transforms, json)
+        }
 
         Command::Analyze {
             key,
