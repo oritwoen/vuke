@@ -71,6 +71,7 @@ impl Output for ConsoleOutput {
             writeln!(w, "wif_uncompressed: {}", derived.wif_uncompressed)?;
             writeln!(w, "p2pkh_compressed: {}", derived.p2pkh_compressed)?;
             writeln!(w, "p2pkh_uncompressed: {}", derived.p2pkh_uncompressed)?;
+            writeln!(w, "p2sh_p2wpkh: {}", derived.p2sh_p2wpkh)?;
             writeln!(w, "p2wpkh: {}", derived.p2wpkh)?;
             writeln!(w, "p2tr: {}", derived.p2tr)?;
         } else {
@@ -115,6 +116,7 @@ impl Output for ConsoleOutput {
         writeln!(w, "---")?;
         writeln!(w, "P2PKH (compressed): {}", derived.p2pkh_compressed)?;
         writeln!(w, "P2PKH (uncompressed): {}", derived.p2pkh_uncompressed)?;
+        writeln!(w, "P2SH-P2WPKH: {}", derived.p2sh_p2wpkh)?;
         writeln!(w, "P2WPKH: {}", derived.p2wpkh)?;
         writeln!(w, "P2TR: {}", derived.p2tr)?;
         writeln!(w, "=========================")?;
@@ -166,6 +168,7 @@ mod tests {
             wif_uncompressed: "WIF_U".to_string(),
             p2pkh_compressed: "1Address".to_string(),
             p2pkh_uncompressed: "1Uncompressed".to_string(),
+            p2sh_p2wpkh: "3Wrapped...".to_string(),
             p2wpkh: "bc1q...".to_string(),
             p2tr: "bc1p...".to_string(),
         }
@@ -242,5 +245,6 @@ mod tests {
         assert!(content.contains("transform: sha256"));
         assert!(content.contains("private_key: abc123"));
         assert!(content.contains("p2pkh_compressed: 1Address"));
+        assert!(content.contains("p2sh_p2wpkh: 3Wrapped..."));
     }
 }

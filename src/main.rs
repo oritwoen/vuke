@@ -766,6 +766,7 @@ fn run_single(passphrase: &str, transform_type: TransformType, network: &str) ->
         println!("---");
         println!("P2PKH (compressed):   {}", derived.p2pkh_compressed);
         println!("P2PKH (uncompressed): {}", derived.p2pkh_uncompressed);
+        println!("P2SH-P2WPKH:          {}", derived.p2sh_p2wpkh);
         println!("P2WPKH:               {}", derived.p2wpkh);
         println!("P2TR:                 {}", derived.p2tr);
     }

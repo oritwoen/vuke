@@ -36,6 +36,8 @@ pub struct DerivedKey {
     pub p2pkh_compressed: String,
     /// P2PKH address (uncompressed pubkey)
     pub p2pkh_uncompressed: String,
+    /// P2SH-P2WPKH (wrapped segwit) address
+    pub p2sh_p2wpkh: String,
     /// P2WPKH (bech32) address
     pub p2wpkh: String,
     /// P2TR (Taproot bech32m) address
@@ -44,10 +46,11 @@ pub struct DerivedKey {
 
 impl DerivedKey {
     /// Get all addresses as slice for matching.
-    pub fn addresses(&self) -> [&str; 4] {
+    pub fn addresses(&self) -> [&str; 5] {
         [
             &self.p2pkh_compressed,
             &self.p2pkh_uncompressed,
+            &self.p2sh_p2wpkh,
             &self.p2wpkh,
             &self.p2tr,
         ]
@@ -115,9 +118,10 @@ impl KeyDeriver {
         let p2pkh_compressed = Address::p2pkh(pk_compressed, self.network).to_string();
         let p2pkh_uncompressed = Address::p2pkh(pk_uncompressed, self.network).to_string();
 
-        // P2WPKH (requires compressed pubkey)
+        // P2WPKH and P2SH-P2WPKH (both require compressed pubkey)
         let compressed_pk = CompressedPublicKey::from_slice(&secp_pubkey.serialize())
             .expect("valid compressed pubkey");
+        let p2sh_p2wpkh = Address::p2shwpkh(&compressed_pk, self.network).to_string();
         let p2wpkh = Address::p2wpkh(&compressed_pk, self.network).to_string();
 
         // P2TR (Taproot, key-path spend with no script tree)
@@ -167,6 +171,7 @@ impl KeyDeriver {
             wif_uncompressed: priv_uncompressed.to_wif(),
             p2pkh_compressed,
             p2pkh_uncompressed,
+            p2sh_p2wpkh,
             p2wpkh,
             p2tr,
         }
@@ -204,6 +209,7 @@ mod tests {
             "1JwSSubhmg6iPtRjtyqhUYYH7bZg3Lfy1T"
         );
         assert!(derived.wif_compressed.starts_with('K') || derived.wif_compressed.starts_with('L'));
+        assert!(derived.p2sh_p2wpkh.starts_with('3'));
         assert!(derived.p2wpkh.starts_with("bc1q"));
     }
 
@@ -214,11 +220,12 @@ mod tests {
         let derived = deriver.derive(&key);
 
         let addrs = derived.addresses();
-        assert_eq!(addrs.len(), 4);
+        assert_eq!(addrs.len(), 5);
         assert!(addrs[0].starts_with('1')); // P2PKH compressed
         assert!(addrs[1].starts_with('1')); // P2PKH uncompressed
-        assert!(addrs[2].starts_with("bc1q")); // P2WPKH
-        assert!(addrs[3].starts_with("bc1p")); // P2TR
+        assert!(addrs[2].starts_with('3')); // P2SH-P2WPKH
+        assert!(addrs[3].starts_with("bc1q")); // P2WPKH
+        assert!(addrs[4].starts_with("bc1p")); // P2TR
     }
 
     #[test]

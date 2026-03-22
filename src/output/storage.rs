@@ -182,6 +182,10 @@ impl StorageOutput {
                 address: &derived.p2pkh_uncompressed,
             },
             AddressRecord {
+                address_type: "p2sh_p2wpkh",
+                address: &derived.p2sh_p2wpkh,
+            },
+            AddressRecord {
                 address_type: "p2wpkh",
                 address: &derived.p2wpkh,
             },
@@ -279,6 +283,7 @@ mod tests {
             wif_uncompressed: "5J1234567890".to_string(),
             p2pkh_compressed: "1ABC123".to_string(),
             p2pkh_uncompressed: "1DEF456".to_string(),
+            p2sh_p2wpkh: "3GHItest".to_string(),
             p2wpkh: "bc1qtest".to_string(),
             p2tr: "bc1ptest".to_string(),
         }

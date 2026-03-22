@@ -133,6 +133,12 @@ pub fn build_iceberg_schema() -> Result<IcebergSchema> {
             Type::Primitive(PrimitiveType::String),
         )
         .into(),
+        NestedField::optional(
+            next_id(),
+            fields::ADDRESS_P2SH_P2WPKH,
+            Type::Primitive(PrimitiveType::String),
+        )
+        .into(),
     ];
 
     IcebergSchema::builder()
@@ -157,7 +163,7 @@ mod tests {
     #[test]
     fn build_schema_succeeds() {
         let schema = build_iceberg_schema().unwrap();
-        assert_eq!(schema.as_struct().fields().len(), 20);
+        assert_eq!(schema.as_struct().fields().len(), 21);
     }
 
     #[test]
