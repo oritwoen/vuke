@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn build_schema_succeeds() {
         let schema = build_iceberg_schema().unwrap();
-        assert_eq!(schema.as_struct().fields().len(), 20);
+        assert_eq!(schema.as_struct().fields().len(), 21);
     }
 
     #[test]
