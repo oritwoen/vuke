@@ -245,5 +245,6 @@ mod tests {
         assert!(content.contains("transform: sha256"));
         assert!(content.contains("private_key: abc123"));
         assert!(content.contains("p2pkh_compressed: 1Address"));
+        assert!(content.contains("p2sh_p2wpkh: 3Wrapped..."));
     }
 }
