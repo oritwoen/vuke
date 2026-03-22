@@ -105,6 +105,29 @@ mod tests {
     }
 
     #[test]
+    fn test_format_results_no_details() {
+        let metadata = KeyMetadata {
+            hex: "def456".to_string(),
+            bit_length: 128,
+            hamming_weight: 64,
+            leading_zeros: 0,
+        };
+
+        let results = vec![
+            AnalysisResult {
+                analyzer: "test",
+                status: AnalysisStatus::NotFound,
+                details: None,
+            },
+        ];
+
+        let output = format_results(&metadata, &results);
+        assert!(output.contains("NOT_FOUND\n"));
+        assert!(!output.contains("()"));
+        assert!(!output.contains("NOT_FOUND \n"));
+    }
+
+    #[test]
     fn test_format_json() {
         let metadata = KeyMetadata {
             hex: "abc123".to_string(),
