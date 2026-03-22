@@ -22,6 +22,7 @@ pub struct MatchInfo {
 pub enum AddressType {
     P2pkhCompressed,
     P2pkhUncompressed,
+    P2shP2wpkh,
     P2wpkh,
     P2tr,
 }
@@ -31,6 +32,7 @@ impl AddressType {
         match self {
             AddressType::P2pkhCompressed => "p2pkh_compressed",
             AddressType::P2pkhUncompressed => "p2pkh_uncompressed",
+            AddressType::P2shP2wpkh => "p2sh_p2wpkh",
             AddressType::P2wpkh => "p2wpkh",
             AddressType::P2tr => "p2tr",
         }
@@ -85,6 +87,14 @@ impl Matcher {
             return Some(MatchInfo {
                 address_type: AddressType::P2pkhUncompressed,
                 address: derived.p2pkh_uncompressed.clone(),
+            });
+        }
+
+        // Check P2SH-P2WPKH
+        if self.targets.contains(&derived.p2sh_p2wpkh) {
+            return Some(MatchInfo {
+                address_type: AddressType::P2shP2wpkh,
+                address: derived.p2sh_p2wpkh.clone(),
             });
         }
 
@@ -161,6 +171,22 @@ mod tests {
         let info = result.unwrap();
         assert!(matches!(info.address_type, AddressType::P2tr));
         assert!(info.address.starts_with("bc1p"));
+    }
+
+    #[test]
+    fn test_matcher_p2sh_p2wpkh() {
+        let key = [1u8; 32];
+        let deriver = KeyDeriver::new();
+        let derived = deriver.derive(&key);
+
+        let matcher = Matcher::from_addresses(vec![derived.p2sh_p2wpkh.clone()]);
+
+        let result = matcher.check(&derived);
+        assert!(result.is_some());
+
+        let info = result.unwrap();
+        assert!(matches!(info.address_type, AddressType::P2shP2wpkh));
+        assert!(info.address.starts_with('3'));
     }
 
     #[test]

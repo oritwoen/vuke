@@ -39,6 +39,7 @@ pub mod fields {
     // Addresses
     pub const ADDRESS_P2PKH_COMPRESSED: &str = "address_p2pkh_compressed";
     pub const ADDRESS_P2PKH_UNCOMPRESSED: &str = "address_p2pkh_uncompressed";
+    pub const ADDRESS_P2SH_P2WPKH: &str = "address_p2sh_p2wpkh";
     pub const ADDRESS_P2WPKH: &str = "address_p2wpkh";
     pub const ADDRESS_P2TR: &str = "address_p2tr";
 
@@ -53,7 +54,7 @@ pub mod fields {
 /// Variable-length fields (public_keys, addresses, export_formats) are mapped
 /// to fixed columns based on known Bitcoin formats.
 ///
-/// # Schema (20 columns)
+/// # Schema (21 columns)
 ///
 /// | Column | Type | Nullable | Description |
 /// |--------|------|----------|-------------|
@@ -73,6 +74,7 @@ pub mod fields {
 /// | pubkey_uncompressed | Utf8 | Yes | Uncompressed public key |
 /// | address_p2pkh_compressed | Utf8 | Yes | P2PKH (compressed) |
 /// | address_p2pkh_uncompressed | Utf8 | Yes | P2PKH (uncompressed) |
+/// | address_p2sh_p2wpkh | Utf8 | Yes | P2SH-P2WPKH (wrapped segwit) |
 /// | address_p2wpkh | Utf8 | Yes | P2WPKH (native segwit) |
 /// | address_p2tr | Utf8 | Yes | P2TR (Taproot) |
 /// | wif_compressed | Utf8 | Yes | WIF compressed |
@@ -107,6 +109,7 @@ pub fn result_schema() -> Schema {
         // Addresses (nullable)
         Field::new(fields::ADDRESS_P2PKH_COMPRESSED, DataType::Utf8, true),
         Field::new(fields::ADDRESS_P2PKH_UNCOMPRESSED, DataType::Utf8, true),
+        Field::new(fields::ADDRESS_P2SH_P2WPKH, DataType::Utf8, true),
         Field::new(fields::ADDRESS_P2WPKH, DataType::Utf8, true),
         Field::new(fields::ADDRESS_P2TR, DataType::Utf8, true),
         // Export formats (nullable)
@@ -229,6 +232,12 @@ pub fn records_to_batch(records: &[ResultRecord<'_>]) -> Result<RecordBatch, Arr
             .map(|r| find_address(r.addresses, "p2pkh_uncompressed"))
             .collect::<Vec<_>>(),
     ));
+    let address_p2sh_p2wpkh_array: ArrayRef = Arc::new(StringArray::from(
+        records
+            .iter()
+            .map(|r| find_address(r.addresses, "p2sh_p2wpkh"))
+            .collect::<Vec<_>>(),
+    ));
     let address_p2wpkh_array: ArrayRef = Arc::new(StringArray::from(
         records
             .iter()
@@ -275,6 +284,7 @@ pub fn records_to_batch(records: &[ResultRecord<'_>]) -> Result<RecordBatch, Arr
             pubkey_uncompressed_array,
             address_p2pkh_compressed_array,
             address_p2pkh_uncompressed_array,
+            address_p2sh_p2wpkh_array,
             address_p2wpkh_array,
             address_p2tr_array,
             wif_compressed_array,
@@ -291,9 +301,9 @@ mod tests {
     use arrow::datatypes::DataType;
 
     #[test]
-    fn schema_has_20_fields() {
+    fn schema_has_21_fields() {
         let schema = result_schema();
-        assert_eq!(schema.fields().len(), 20);
+        assert_eq!(schema.fields().len(), 21);
     }
 
     #[test]
@@ -320,6 +330,7 @@ mod tests {
                 "pubkey_uncompressed",
                 "address_p2pkh_compressed",
                 "address_p2pkh_uncompressed",
+                "address_p2sh_p2wpkh",
                 "address_p2wpkh",
                 "address_p2tr",
                 "wif_compressed",
@@ -348,7 +359,7 @@ mod tests {
         assert_eq!(schema.field(10).data_type(), &DataType::UInt16);
         assert_eq!(schema.field(11).data_type(), &DataType::UInt8);
 
-        for i in 12..20 {
+        for i in 12..21 {
             assert_eq!(schema.field(i).data_type(), &DataType::Utf8);
         }
     }
@@ -366,7 +377,7 @@ mod tests {
             );
         }
 
-        let nullable = [4, 12, 13, 14, 15, 16, 17, 18, 19];
+        let nullable = [4, 12, 13, 14, 15, 16, 17, 18, 19, 20];
         for i in nullable {
             assert!(
                 schema.field(i).is_nullable(),

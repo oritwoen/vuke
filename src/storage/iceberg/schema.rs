@@ -133,6 +133,12 @@ pub fn build_iceberg_schema() -> Result<IcebergSchema> {
             Type::Primitive(PrimitiveType::String),
         )
         .into(),
+        NestedField::optional(
+            next_id(),
+            fields::ADDRESS_P2SH_P2WPKH,
+            Type::Primitive(PrimitiveType::String),
+        )
+        .into(),
     ];
 
     IcebergSchema::builder()

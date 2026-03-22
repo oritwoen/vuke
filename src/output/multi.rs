@@ -91,6 +91,7 @@ mod tests {
             wif_uncompressed: "5J".to_string(),
             p2pkh_compressed: "1ABC".to_string(),
             p2pkh_uncompressed: "1DEF".to_string(),
+            p2sh_p2wpkh: "3GHI".to_string(),
             p2wpkh: "bc1q".to_string(),
             p2tr: "bc1p".to_string(),
         }

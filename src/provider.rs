@@ -437,6 +437,8 @@ fn verify_key_boha(key: &[u8; 32], query: &str) -> Result<VerifyReport> {
             Some("p2pkh_compressed")
         } else if derived.p2pkh_uncompressed == addr {
             Some("p2pkh_uncompressed")
+        } else if derived.p2sh_p2wpkh == addr {
+            Some("p2sh_p2wpkh")
         } else if derived.p2wpkh == addr {
             Some("p2wpkh")
         } else if derived.p2tr == addr {
