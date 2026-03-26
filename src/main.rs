@@ -1331,15 +1331,16 @@ fn run_analyze(
             Ok(k) => k,
             Err(e) => {
                 if json_output {
-                    let err_msg = e.to_string()
-                        .replace('\\', "\\\\")
-                        .replace('"', "\\\"")
-                        .replace('\n', "\\n")
-                        .replace('\r', "\\r")
-                        .replace('\t', "\\t");
+                    let escape = |s: &str| -> String {
+                        s.replace('\\', "\\\\")
+                            .replace('"', "\\\"")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r")
+                            .replace('\t', "\\t")
+                    };
                     json_entries.push(format!(
                         r#"{{"key":"{}","error":"{}"}}"#,
-                        key_input, err_msg
+                        escape(key_input), escape(&e.to_string())
                     ));
                 } else {
                     eprintln!("Error parsing key '{}': {}", key_input, e);
