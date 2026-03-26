@@ -1325,8 +1325,9 @@ fn run_analyze(
     let multi = key_inputs.len() > 1;
     let mut json_entries = Vec::new();
     let mut had_error = false;
+    let mut printed_count = 0usize;
 
-    for (i, key_input) in key_inputs.iter().enumerate() {
+    for key_input in key_inputs {
         let key = match parse_private_key(key_input) {
             Ok(k) => k,
             Err(e) => {
@@ -1376,7 +1377,7 @@ fn run_analyze(
                             matches_json.join(",")
                         ));
                     } else {
-                        if multi && i > 0 {
+                        if multi && printed_count > 0 {
                             println!();
                         }
                         println!("Verification Report");
@@ -1397,6 +1398,7 @@ fn run_analyze(
                                 }
                             }
                         }
+                        printed_count += 1;
                     }
                     continue;
                 }
@@ -1459,10 +1461,11 @@ fn run_analyze(
         if json_output {
             json_entries.push(format_results_json(&metadata, &results));
         } else {
-            if multi && i > 0 {
+            if multi && printed_count > 0 {
                 println!();
             }
             print!("{}", format_results(&metadata, &results));
+            printed_count += 1;
         }
     }
 
