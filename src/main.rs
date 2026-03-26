@@ -255,7 +255,6 @@ enum Command {
     /// Analyze a private key for potential vulnerable origins
     Analyze {
         /// Private key(s) (hex, WIF, or decimal)
-        #[arg(num_args = 1..)]
         key: Vec<String>,
 
         /// File with keys to analyze (one per line, same formats as positional)
@@ -1325,9 +1324,25 @@ fn run_analyze(
 
     let multi = key_inputs.len() > 1;
     let mut json_entries = Vec::new();
+    let mut had_error = false;
 
     for (i, key_input) in key_inputs.iter().enumerate() {
-        let key = parse_private_key(key_input)?;
+        let key = match parse_private_key(key_input) {
+            Ok(k) => k,
+            Err(e) => {
+                if json_output {
+                    json_entries.push(format!(
+                        r#"{{"key":"{}","error":"{}"}}"#,
+                        key_input,
+                        e.to_string().replace('"', "\\\"")
+                    ));
+                } else {
+                    eprintln!("Error parsing key '{}': {}", key_input, e);
+                }
+                had_error = true;
+                continue;
+            }
+        };
         let metadata = KeyMetadata::from_key(&key);
 
         if let Some(ref verify_ref) = verify_input {
@@ -1451,6 +1466,10 @@ fn run_analyze(
         } else if let Some(entry) = json_entries.into_iter().next() {
             println!("{}", entry);
         }
+    }
+
+    if had_error && multi {
+        anyhow::bail!("Some keys failed to parse");
     }
 
     Ok(())
