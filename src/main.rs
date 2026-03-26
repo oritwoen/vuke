@@ -1331,10 +1331,15 @@ fn run_analyze(
             Ok(k) => k,
             Err(e) => {
                 if json_output {
+                    let err_msg = e.to_string()
+                        .replace('\\', "\\\\")
+                        .replace('"', "\\\"")
+                        .replace('\n', "\\n")
+                        .replace('\r', "\\r")
+                        .replace('\t', "\\t");
                     json_entries.push(format!(
                         r#"{{"key":"{}","error":"{}"}}"#,
-                        key_input,
-                        e.to_string().replace('"', "\\\"")
+                        key_input, err_msg
                     ));
                 } else {
                     eprintln!("Error parsing key '{}': {}", key_input, e);
@@ -1468,7 +1473,7 @@ fn run_analyze(
         }
     }
 
-    if had_error && multi {
+    if had_error {
         anyhow::bail!("Some keys failed to parse");
     }
 
