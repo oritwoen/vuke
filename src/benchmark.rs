@@ -77,13 +77,32 @@ fn format_benchmark_json(
     .to_string()
 }
 
-/// Run standardized benchmark for a transform.
-pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
-    if !json {
-        println!("Running Benchmark for {:?}...", transform_type);
-        println!("Time: 2s warmup + 5s measure (approx)");
-    }
+/// Benchmarkable transform types (excludes bitimage which requires external files).
+pub fn default_transforms() -> Vec<TransformType> {
+    vec![
+        TransformType::Direct,
+        TransformType::Sha256,
+        TransformType::DoubleSha256,
+        TransformType::Md5,
+        TransformType::Milksad,
+        TransformType::Mt64,
+        TransformType::Armory,
+        TransformType::Multibit,
+        TransformType::Electrum { for_change: false },
+        TransformType::Lcg { variant: None, endian: crate::lcg::LcgEndian::Big },
+        TransformType::Xorshift { variant: None },
+        TransformType::Sha256Chain { variant: None, chain_depth: 1 },
+    ]
+}
 
+struct BenchResult {
+    name: String,
+    speed: u64,
+    count: u64,
+    duration: f64,
+}
+
+fn bench_single(transform_type: &TransformType) -> Result<BenchResult> {
     let transform = transform_type.create();
 
     // Prepare test data
@@ -120,18 +139,72 @@ pub fn run_benchmark(transform_type: TransformType, json: bool) -> Result<()> {
 
     let count = counter.load(Ordering::Relaxed);
     let duration = start.elapsed().as_secs_f64();
-    let speed = count as f64 / duration;
+    let speed = (count as f64 / duration) as u64;
+
+    Ok(BenchResult {
+        name: benchmark_name(transform_type),
+        speed,
+        count,
+        duration,
+    })
+}
+
+/// Run standardized benchmark for one or more transforms.
+pub fn run_benchmark(transforms: Vec<TransformType>, json: bool) -> Result<()> {
+    if transforms.len() == 1 {
+        let t = &transforms[0];
+        if !json {
+            println!("Running Benchmark for {:?}...", t);
+            println!("Time: 2s warmup + 5s measure (approx)");
+        }
+
+        let result = bench_single(t)?;
+
+        if json {
+            println!("{}", format_benchmark_json(t, result.speed, result.count, result.duration));
+        } else {
+            println!("------------------------------------------------");
+            println!("Result: {:.2} Million Inputs/sec", result.speed as f64 / 1_000_000.0);
+            println!("Total:  {} inputs in {:.2}s", result.count, result.duration);
+            println!("------------------------------------------------");
+        }
+
+        return Ok(());
+    }
+
+    // Multiple transforms
+    if !json {
+        println!("Benchmarking {} transforms...", transforms.len());
+        println!("Time per transform: 2s warmup + 5s measure (approx)");
+        println!();
+    }
+
+    let mut results = Vec::new();
+
+    for t in &transforms {
+        if !json {
+            eprint!("  {} ... ", benchmark_name(t));
+        }
+        let result = bench_single(t)?;
+        if !json {
+            eprintln!("{:.2}M keys/sec", result.speed as f64 / 1_000_000.0);
+        }
+        results.push((t, result));
+    }
 
     if json {
-        println!(
-            "{}",
-            format_benchmark_json(&transform_type, speed as u64, count, duration)
-        );
+        let json_results: Vec<String> = results
+            .iter()
+            .map(|(t, r)| format_benchmark_json(t, r.speed, r.count, r.duration))
+            .collect();
+        println!("[{}]", json_results.join(","));
     } else {
-        println!("------------------------------------------------");
-        println!("Result: {:.2} Million Inputs/sec", speed / 1_000_000.0);
-        println!("Total:  {} inputs in {:.2}s", count, duration);
-        println!("------------------------------------------------");
+        println!();
+        println!("{:<25} {:>15}", "Transform", "Keys/sec");
+        println!("{}", "-".repeat(42));
+        for (_t, r) in &results {
+            println!("{:<25} {:>12.2}M", r.name, r.speed as f64 / 1_000_000.0);
+        }
     }
 
     Ok(())
@@ -194,5 +267,20 @@ mod tests {
         assert!(!name.contains("word\"list\\seed\t"));
         assert!(!name.contains("C:\\keys\\\"set\"\n.txt"));
         Ok(())
+    }
+
+    #[test]
+    fn default_transforms_are_all_benchmarkable() {
+        use super::default_transforms;
+
+        let transforms = default_transforms();
+        assert!(transforms.len() >= 10);
+
+        for t in &transforms {
+            // Each default transform should be creatable without panicking
+            let _ = t.create();
+            // Each should have a non-empty benchmark name
+            assert!(!benchmark_name(t).is_empty());
+        }
     }
 }
