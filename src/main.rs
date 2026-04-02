@@ -248,7 +248,7 @@ enum Command {
         transform: Vec<TransformType>,
 
         /// Benchmark all transforms
-        #[arg(long)]
+        #[arg(long, conflicts_with = "transform")]
         all: bool,
 
         /// Output JSON for benchmark runner
