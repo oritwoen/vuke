@@ -247,7 +247,7 @@ enum Command {
         #[arg(long, value_parser = parse_transform_type, num_args = 1..)]
         transform: Vec<TransformType>,
 
-        /// Benchmark all transforms
+        /// Benchmark all default transforms
         #[arg(long, conflicts_with = "transform")]
         all: bool,
 
