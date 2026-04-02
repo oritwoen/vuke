@@ -258,8 +258,12 @@ enum Command {
 
     /// Analyze a private key for potential vulnerable origins
     Analyze {
-        /// Private key (hex, WIF, or decimal)
-        key: String,
+        /// Private key(s) (hex, WIF, or decimal)
+        key: Vec<String>,
+
+        /// File with keys to analyze (one per line, same formats as positional)
+        #[arg(long, value_name = "FILE")]
+        key_file: Option<PathBuf>,
 
         /// Skip brute-force checks (faster, heuristics only)
         #[arg(long)]
@@ -437,6 +441,7 @@ fn main() -> Result<()> {
 
         Command::Analyze {
             key,
+            key_file,
             fast,
             mask,
             cascade,
@@ -454,8 +459,24 @@ fn main() -> Result<()> {
             #[cfg(not(feature = "gpu"))]
             let use_gpu = false;
 
+            let mut keys = key;
+            if let Some(file_path) = key_file {
+                let content = std::fs::read_to_string(&file_path)
+                    .map_err(|e| anyhow::anyhow!("Failed to read key file {}: {}", file_path.display(), e))?;
+                for line in content.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() && !line.starts_with('#') {
+                        keys.push(line.to_string());
+                    }
+                }
+            }
+
+            if keys.is_empty() {
+                anyhow::bail!("No keys provided. Pass keys as arguments or use --key-file");
+            }
+
             run_analyze(
-                &key,
+                &keys,
                 fast,
                 mask,
                 cascade,
@@ -1199,7 +1220,7 @@ fn resolve_cascade(input: &str) -> Result<Option<Vec<(u8, u64)>>> {
 // ---------------------------------------------------------------------------
 
 fn run_analyze(
-    key_input: &str,
+    key_inputs: &[String],
     fast: bool,
     mask_bits: Option<u8>,
     cascade_input: Option<String>,
@@ -1251,74 +1272,6 @@ fn run_analyze(
             if let Some(bits) = ctx.mask_bits {
                 eprintln!("Auto-mask: {} bits", bits);
             }
-        }
-    }
-
-    let key = parse_private_key(key_input)?;
-    let metadata = KeyMetadata::from_key(&key);
-
-    if let Some(ref verify_ref) = verify_input {
-        match vuke::provider::verify_key(&key, verify_ref)? {
-            Some(report) => {
-                if json_output {
-                    let matches_json: Vec<String> = report
-                        .matches
-                        .iter()
-                        .map(|m| {
-                            format!(
-                                r#"{{"puzzle_id":"{}","address":"{}","address_type":"{}","status":"{}","prize":{}}}"#,
-                                m.puzzle_id,
-                                m.address,
-                                m.address_type,
-                                m.status,
-                                m.prize.map_or("null".to_string(), |p| p.to_string())
-                            )
-                        })
-                        .collect();
-                    println!(
-                        r#"{{"key":"{}","total_checked":{},"matches":[{}]}}"#,
-                        key_input,
-                        report.total_checked,
-                        matches_json.join(",")
-                    );
-                } else {
-                    println!("Verification Report");
-                    println!("---");
-                    println!("Key: {}", key_input);
-                    println!("Checked: {} puzzles", report.total_checked);
-                    println!();
-
-                    if report.matches.is_empty() {
-                        println!("No matches found.");
-                    } else {
-                        println!("Matches:");
-                        for m in &report.matches {
-                            println!("  {} ({})", m.puzzle_id, m.status);
-                            println!("    Address: {} ({})", m.address, m.address_type);
-                            if let Some(prize) = m.prize {
-                                println!("    Prize: {} BTC", prize);
-                            }
-                        }
-                    }
-                }
-                return Ok(());
-            }
-            None => {
-                return Err(anyhow::anyhow!(
-                    "Invalid verify provider reference: {}",
-                    verify_ref
-                ));
-            }
-        }
-    }
-
-    if let Some(bits) = mask_bits {
-        let key_bits = vuke::analyze::calculate_bit_length(&key);
-        if key_bits > bits as u16 {
-            eprintln!(
-                "Warning: key has {} bits but mask is {} bits. Key will be treated as already masked.",
-                key_bits, bits
-            );
         }
     }
 
@@ -1382,47 +1335,163 @@ fn run_analyze(
     #[cfg(not(feature = "gpu"))]
     let _ = use_gpu; // Suppress unused warning
 
-    let mut results = Vec::new();
+    let multi = key_inputs.len() > 1;
+    let mut json_entries = Vec::new();
+    let mut had_error = false;
+    let mut printed_count = 0usize;
 
-    for analyzer in &analyzers {
-        let progress = if analyzer.is_brute_force() && !json_output {
-            let pb = ProgressBar::new(0);
-            pb.set_style(vuke::default_progress_style());
-            Some(pb)
-        } else {
-            None
+    for key_input in key_inputs {
+        let key = match parse_private_key(key_input) {
+            Ok(k) => k,
+            Err(e) => {
+                if json_output {
+                    let escape = |s: &str| -> String {
+                        s.replace('\\', "\\\\")
+                            .replace('"', "\\\"")
+                            .replace('\n', "\\n")
+                            .replace('\r', "\\r")
+                            .replace('\t', "\\t")
+                    };
+                    json_entries.push(format!(
+                        r#"{{"key":"{}","error":"{}"}}"#,
+                        escape(key_input), escape(&e.to_string())
+                    ));
+                } else {
+                    eprintln!("Error parsing key '{}': {}", key_input, e);
+                }
+                had_error = true;
+                continue;
+            }
         };
+        let metadata = KeyMetadata::from_key(&key);
 
-        // Try GPU first if available and supported
-        #[cfg(feature = "gpu")]
-        let result = if let Some(ref ctx) = gpu_ctx {
-            if analyzer.supports_gpu() {
-                match analyzer.analyze_gpu(ctx, &key, &config, progress.as_ref()) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        if !json_output {
-                            eprintln!("GPU error ({}), falling back to CPU", e);
+        if let Some(ref verify_ref) = verify_input {
+            match vuke::provider::verify_key(&key, verify_ref)? {
+                Some(report) => {
+                    if json_output {
+                        let matches_json: Vec<String> = report
+                            .matches
+                            .iter()
+                            .map(|m| {
+                                format!(
+                                    r#"{{"puzzle_id":"{}","address":"{}","address_type":"{}","status":"{}","prize":{}}}"#,
+                                    m.puzzle_id,
+                                    m.address,
+                                    m.address_type,
+                                    m.status,
+                                    m.prize.map_or("null".to_string(), |p| p.to_string())
+                                )
+                            })
+                            .collect();
+                        json_entries.push(format!(
+                            r#"{{"key":"{}","total_checked":{},"matches":[{}]}}"#,
+                            key_input,
+                            report.total_checked,
+                            matches_json.join(",")
+                        ));
+                    } else {
+                        if multi && printed_count > 0 {
+                            println!();
                         }
-                        analyzer.analyze(&key, &config, progress.as_ref())
+                        println!("Verification Report");
+                        println!("---");
+                        println!("Key: {}", key_input);
+                        println!("Checked: {} puzzles", report.total_checked);
+                        println!();
+
+                        if report.matches.is_empty() {
+                            println!("No matches found.");
+                        } else {
+                            println!("Matches:");
+                            for m in &report.matches {
+                                println!("  {} ({})", m.puzzle_id, m.status);
+                                println!("    Address: {} ({})", m.address, m.address_type);
+                                if let Some(prize) = m.prize {
+                                    println!("    Prize: {} BTC", prize);
+                                }
+                            }
+                        }
+                        printed_count += 1;
                     }
+                    continue;
+                }
+                None => {
+                    return Err(anyhow::anyhow!(
+                        "Invalid verify provider reference: {}",
+                        verify_ref
+                    ));
+                }
+            }
+        }
+
+        if let Some(bits) = mask_bits {
+            let key_bits = vuke::analyze::calculate_bit_length(&key);
+            if key_bits > bits as u16 {
+                eprintln!(
+                    "Warning: key has {} bits but mask is {} bits. Key will be treated as already masked.",
+                    key_bits, bits
+                );
+            }
+        }
+
+        let mut results = Vec::new();
+
+        for analyzer in &analyzers {
+            let progress = if analyzer.is_brute_force() && !json_output {
+                let pb = ProgressBar::new(0);
+                pb.set_style(vuke::default_progress_style());
+                Some(pb)
+            } else {
+                None
+            };
+
+            // Try GPU first if available and supported
+            #[cfg(feature = "gpu")]
+            let result = if let Some(ref ctx) = gpu_ctx {
+                if analyzer.supports_gpu() {
+                    match analyzer.analyze_gpu(ctx, &key, &config, progress.as_ref()) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            if !json_output {
+                                eprintln!("GPU error ({}), falling back to CPU", e);
+                            }
+                            analyzer.analyze(&key, &config, progress.as_ref())
+                        }
+                    }
+                } else {
+                    analyzer.analyze(&key, &config, progress.as_ref())
                 }
             } else {
                 analyzer.analyze(&key, &config, progress.as_ref())
-            }
+            };
+
+            #[cfg(not(feature = "gpu"))]
+            let result = analyzer.analyze(&key, &config, progress.as_ref());
+
+            results.push(result);
+        }
+
+        if json_output {
+            json_entries.push(format_results_json(&metadata, &results));
         } else {
-            analyzer.analyze(&key, &config, progress.as_ref())
-        };
-
-        #[cfg(not(feature = "gpu"))]
-        let result = analyzer.analyze(&key, &config, progress.as_ref());
-
-        results.push(result);
+            if multi && printed_count > 0 {
+                println!();
+            }
+            print!("{}", format_results(&metadata, &results));
+            printed_count += 1;
+        }
     }
 
     if json_output {
-        println!("{}", format_results_json(&metadata, &results));
-    } else {
-        print!("{}", format_results(&metadata, &results));
+        if multi {
+            println!("[{}]", json_entries.join(",\n"));
+        } else if let Some(entry) = json_entries.into_iter().next() {
+            println!("{}", entry);
+        }
+    }
+
+    if had_error {
+        anyhow::bail!("Some keys failed to parse");
     }
 
     Ok(())
